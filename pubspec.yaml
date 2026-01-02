@@ -1,0 +1,66 @@
+name: electric_attendance
+description: Smart Attendance System with Face ID, GPS, and WiFi verification.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  flutter_animate: ^4.3.0
+  
+  # Supabase Backend
+  supabase_flutter: ^2.3.0
+  
+  # Location Services
+  geolocator: ^11.0.0
+  geocoding: ^3.0.0
+  
+  # WiFi Detection
+  network_info_plus: ^5.0.3
+  
+  # Camera & Face Detection
+  camera: ^0.10.5+9
+  google_mlkit_face_detection: ^0.10.0
+  
+  # Note: Using ML Kit landmarks for simplified face embeddings
+  # For production, consider server-side face recognition
+  
+  # Permissions
+  permission_handler: ^11.1.0
+  
+  # Local Storage & Offline
+  shared_preferences: ^2.2.2
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  
+  # Connectivity
+  connectivity_plus: ^5.0.2
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.2.2
+  image: ^4.1.4
+  flutter_dotenv: ^5.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/models/
+    - assets/images/
+    - .env
