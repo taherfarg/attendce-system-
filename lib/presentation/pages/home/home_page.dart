@@ -4,6 +4,7 @@ import '../../../core/auth/auth_service.dart';
 import '../../../core/services/offline_queue.dart';
 import '../attendance/face_scan_page.dart';
 import '../../../data/repositories/attendance_repository.dart';
+import '../../../core/utils/time_utils.dart';
 
 /// Modern minimal employee home page
 class HomePage extends StatefulWidget {
@@ -39,13 +40,15 @@ class _HomePageState extends State<HomePage> {
       final data = await _repo.getHistory();
       final pending = await _offlineQueue.getPendingCount();
 
-      final now = DateTime.now();
+      final now = TimeUtils.nowDubai();
 
       // logic: Find today's records
       final todayRecords = data
           .where((r) {
             if (r == null) return false;
-            final checkIn = DateTime.parse(r['check_in_time']).toLocal();
+            final checkIn = TimeUtils.toDubai(
+              DateTime.parse(r['check_in_time']),
+            );
             return checkIn.year == now.year &&
                 checkIn.month == now.month &&
                 checkIn.day == now.day;
@@ -350,13 +353,17 @@ class _StatusCard extends StatelessWidget {
       icon = Icons.schedule;
     }
 
-    // Parse times to Local
+    // Parse times to Local (DUBAI)
     DateTime? checkInTime;
     DateTime? checkOutTime;
     if (todayRecord != null) {
-      checkInTime = DateTime.parse(todayRecord!['check_in_time']).toLocal();
+      checkInTime = TimeUtils.toDubai(
+        DateTime.parse(todayRecord!['check_in_time']),
+      );
       if (todayRecord!['check_out_time'] != null) {
-        checkOutTime = DateTime.parse(todayRecord!['check_out_time']).toLocal();
+        checkOutTime = TimeUtils.toDubai(
+          DateTime.parse(todayRecord!['check_out_time']),
+        );
       }
     }
 
@@ -537,10 +544,10 @@ class _HistoryItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    // IMPORTANT: Parse to Local Time for Display!
-    final checkIn = DateTime.parse(item['check_in_time']).toLocal();
+    // IMPORTANT: Parse to Dubai Time for Display!
+    final checkIn = TimeUtils.toDubai(DateTime.parse(item['check_in_time']));
     final checkOut = item['check_out_time'] != null
-        ? DateTime.parse(item['check_out_time']).toLocal()
+        ? TimeUtils.toDubai(DateTime.parse(item['check_out_time']))
         : null;
 
     final isComplete = checkOut != null;

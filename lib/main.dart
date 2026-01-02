@@ -8,6 +8,7 @@ import 'presentation/pages/home/admin_home_page.dart';
 import 'presentation/pages/profile/enrollment_page.dart';
 import 'core/services/offline_queue.dart';
 import 'core/config/app_config.dart';
+import 'core/utils/time_utils.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,14 +24,12 @@ Future<void> main() async {
   // Load environment configuration
   await AppConfig.initialize();
 
+  // Initialize Timezones (Dubai)
+  TimeUtils.initialize();
+
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
     anonKey: AppConfig.supabaseAnonKey,
-  );
-
-  debugPrint("🔍 DEBUG CONFIG: URL=${AppConfig.supabaseUrl}");
-  debugPrint(
-    "🔍 DEBUG CONFIG: KEY_START=${AppConfig.supabaseAnonKey.substring(0, 10)}...",
   );
 
   // Initialize offline sync service
@@ -46,7 +45,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Smart Attendance',
+      title: 'Pollux Attendance',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

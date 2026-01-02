@@ -15,9 +15,9 @@
     <uses-feature android:name="android.hardware.camera.front" android:required="true"/>
     
     <application
-        android:label="Smart Attendance"
+        android:label="Pollux Attendance"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/launcher_icon"
         tools:replace="android:label">
         <activity
             android:name=".MainActivity"

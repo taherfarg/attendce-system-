@@ -6,6 +6,7 @@ import 'admin_reports_page.dart';
 import 'admin_settings_page.dart';
 import 'admin_notifications_page.dart';
 import '../profile/face_test_page.dart';
+import '../../../core/utils/time_utils.dart';
 
 /// Modern minimal admin dashboard
 class AdminHomePage extends StatefulWidget {
@@ -40,14 +41,17 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
     try {
       final client = Supabase.instance.client;
-      final today = DateTime.now();
+      final today = TimeUtils.nowDubai();
+      // Start of Dubai day
       final startOfDay = DateTime(today.year, today.month, today.day);
+      // Convert to UTC for database query (Dubai is UTC+4)
+      final startOfDayUtc = startOfDay.subtract(const Duration(hours: 4));
 
       // 1. Fetch Stats
       final checkInsResponse = await client
           .from('attendance')
           .select('id')
-          .gte('check_in_time', startOfDay.toIso8601String());
+          .gte('check_in_time', startOfDayUtc.toIso8601String());
       _todayCheckIns = (checkInsResponse as List).length;
 
       final employeesResponse = await client
@@ -60,7 +64,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
       final activeResponse = await client
           .from('attendance')
           .select('id')
-          .gte('check_in_time', startOfDay.toIso8601String())
+          .gte('check_in_time', startOfDayUtc.toIso8601String())
           .isFilter('check_out_time', null);
       _activeNow = (activeResponse as List).length;
 
@@ -69,7 +73,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         final activityResponse = await client
             .from('attendance')
             .select('*, users(name, role)')
-            .gte('check_in_time', startOfDay.toIso8601String())
+            .gte('check_in_time', startOfDayUtc.toIso8601String())
             .order('check_in_time', ascending: false);
 
         if (mounted) {
@@ -83,7 +87,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         final fallbackResponse = await client
             .from('attendance')
             .select()
-            .gte('check_in_time', startOfDay.toIso8601String())
+            .gte('check_in_time', startOfDayUtc.toIso8601String())
             .order('check_in_time', ascending: false);
 
         if (mounted) {
@@ -346,18 +350,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
                           final record = _liveActivity[index];
                           final userData =
                               record['users'] as Map<String, dynamic>? ?? {};
-                          final checkIn = DateTime.parse(
-                            record['check_in_time'],
-                          ).toLocal();
+                          final checkIn = TimeUtils.toDubai(
+                            DateTime.parse(record['check_in_time']),
+                          );
                           final checkOutStr = record['check_out_time'];
                           final checkOut = checkOutStr != null
-                              ? DateTime.parse(checkOutStr).toLocal()
+                              ? TimeUtils.toDubai(DateTime.parse(checkOutStr))
                               : null;
 
                           // Calculate duration
                           final duration = checkOut != null
                               ? checkOut.difference(checkIn)
-                              : DateTime.now().difference(checkIn);
+                              : TimeUtils.nowDubai().difference(checkIn);
                           final hours = duration.inHours;
                           final minutes = duration.inMinutes.remainder(60);
                           final durationStr = '${hours}h ${minutes}m';
