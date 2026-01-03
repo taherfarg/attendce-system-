@@ -1,4 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/utils/error_handler.dart';
+import '../models/attendance_model.dart';
+import 'package:flutter/foundation.dart';
 
 class AttendanceRepository {
   final SupabaseClient _client = Supabase.instance.client;
@@ -9,55 +12,70 @@ class AttendanceRepository {
     required Map<String, dynamic> location,
     required Map<String, dynamic> wifiInfo,
   }) async {
-    final response = await _client.functions.invoke(
-      'verify_attendance',
-      body: {
-        'user_id': userId,
-        'face_embedding': faceEmbedding,
-        'location': location,
-        'wifi_info': wifiInfo,
-        'type': 'check_in',
-      },
-    );
+    try {
+      final response = await _client.functions.invoke(
+        'verify_attendance',
+        body: {
+          'user_id': userId,
+          'face_embedding': faceEmbedding,
+          'location': location,
+          'wifi_info': wifiInfo,
+          'type': 'check_in',
+        },
+      );
 
-    if (response.status != 200) {
-      // Parse error message
-      throw Exception('Check-in failed: ${response.data}');
+      if (response.status != 200) {
+        throw response.data?.toString() ?? 'Unknown error from server';
+      }
+    } catch (e) {
+      debugPrint('Check-in Error: $e');
+      throw AppErrorHandler.parse(e);
     }
   }
 
   Future<void> checkOut({
     required String userId,
-    required List<double>
-    faceEmbedding, // Even checkout might need verification if stricter
+    required List<double> faceEmbedding,
     required Map<String, dynamic> location,
     required Map<String, dynamic> wifiInfo,
   }) async {
-    final response = await _client.functions.invoke(
-      'verify_attendance',
-      body: {
-        'user_id': userId,
-        'face_embedding': faceEmbedding,
-        'type': 'check_out',
-        // We might relax location/wifi for checkout or fail if they left?
-        // Generally we want to allow checkout even if outside to stop clock,
-        // but maybe flag it. For now, pass same data.
-        'location': location,
-        'wifi_info': wifiInfo,
-      },
-    );
+    try {
+      final response = await _client.functions.invoke(
+        'verify_attendance',
+        body: {
+          'user_id': userId,
+          'face_embedding': faceEmbedding,
+          'location': location,
+          'wifi_info': wifiInfo,
+          'type': 'check_out',
+        },
+      );
 
-    if (response.status != 200) {
-      throw Exception('Check-out failed: ${response.data}');
+      if (response.status != 200) {
+        throw response.data?.toString() ?? 'Unknown error from server';
+      }
+    } catch (e) {
+      debugPrint('Check-out Error: $e');
+      throw AppErrorHandler.parse(e);
     }
   }
 
-  Future<List<Map<String, dynamic>>> getHistory() async {
-    final userId = _client.auth.currentUser!.id;
-    return await _client
-        .from('attendance')
-        .select()
-        .eq('user_id', userId)
-        .order('check_in_time', ascending: false);
+  /// Returns sorted list of attendance history
+  Future<List<AttendanceModel>> getHistory() async {
+    try {
+      final userId = _client.auth.currentUser?.id;
+      if (userId == null) throw 'User not authenticated';
+
+      final List<dynamic> data = await _client
+          .from('attendance')
+          .select()
+          .eq('user_id', userId)
+          .order('check_in_time', ascending: false);
+
+      return data.map((json) => AttendanceModel.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('Fetch History Error: $e');
+      throw AppErrorHandler.parse(e);
+    }
   }
 }
