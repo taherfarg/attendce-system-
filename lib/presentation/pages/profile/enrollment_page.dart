@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/face/face_service.dart';
 
-/// Modern minimal face enrollment page
+/// Modern face enrollment page with step indicators and animations
 class EnrollmentPage extends StatefulWidget {
   const EnrollmentPage({super.key});
 
@@ -12,7 +14,8 @@ class EnrollmentPage extends StatefulWidget {
   State<EnrollmentPage> createState() => _EnrollmentPageState();
 }
 
-class _EnrollmentPageState extends State<EnrollmentPage> {
+class _EnrollmentPageState extends State<EnrollmentPage>
+    with TickerProviderStateMixin {
   CameraController? _cameraController;
   final FaceService _faceService = FaceService();
 
@@ -28,14 +31,38 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
   bool _hasSeenBlink = false;
   bool _livenessVerified = false;
 
+  late AnimationController _pulseController;
+
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
     _initializeCamera();
   }
 
   Future<void> _initializeCamera() async {
     try {
+      final status = await Permission.camera.request();
+      if (status.isDenied || status.isPermanentlyDenied) {
+        if (mounted) {
+          setState(() {
+            _isInitializing = false;
+            _statusMessage = 'Camera permission denied';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Permission denied. Please enable camera access in settings.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       await _faceService.initialize();
 
       final cameras = await availableCameras();
@@ -126,12 +153,12 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
               if (!_hasSeenEyesOpen) {
                 _statusMessage = 'Keep eyes open';
               } else if (!_hasSeenBlink) {
-                _statusMessage = 'Please blink';
+                _statusMessage = 'Blink once';
               } else {
-                _statusMessage = 'Almost there...';
+                _statusMessage = 'Almost ready...';
               }
             } else {
-              _statusMessage = 'Ready!';
+              _statusMessage = 'Ready to save!';
             }
           });
         }
@@ -157,50 +184,33 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
       final embedding = _faceService.generateEmbedding(_detectedFace!);
       final userId = Supabase.instance.client.auth.currentUser!.id;
 
-      debugPrint('Enrolling face for user: $userId');
-      debugPrint('Embedding size: ${embedding.length}');
-
       final response = await Supabase.instance.client.functions.invoke(
         'enroll_face',
         body: {'user_id': userId, 'face_embedding': embedding},
       );
 
-      debugPrint('Response status: ${response.status}');
-      debugPrint('Response data: ${response.data}');
-
       if (response.status == 200) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Face enrolled successfully!'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF10B981),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+          _showSuccessDialog();
         }
       } else {
         final errorMsg = response.data is Map
             ? (response.data['error'] ?? 'Unknown error')
             : response.data.toString();
-        throw Exception('Status ${response.status}: $errorMsg');
+        throw Exception(errorMsg);
       }
     } catch (e) {
       debugPrint('Enrollment error: $e');
       if (mounted) {
         setState(() {
           _isEnrolling = false;
-          _statusMessage = 'Error: $e';
+          _statusMessage = 'Failed - try again';
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Save failed: $e'),
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red.shade400,
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
           ),
         );
         await _cameraController?.startImageStream(_processImage);
@@ -208,8 +218,65 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
     }
   }
 
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        icon: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.check_circle_rounded,
+            color: Color(0xFF10B981),
+            size: 64,
+          ),
+        ),
+        title: const Text(
+          'Face Enrolled!',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Your face has been registered successfully. You can now use Face ID for attendance.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade600, height: 1.5),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.of(
+                  context,
+                ).pushNamedAndRemoveUntil('/', (_) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: const Text(
+                'Continue',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _pulseController.dispose();
     _cameraController?.dispose();
     _faceService.dispose();
     super.dispose();
@@ -217,187 +284,262 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF1E293B),
+      backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
         child: _isInitializing
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Starting camera...',
-                      style: TextStyle(color: Colors.grey.shade400),
-                    ),
-                  ],
-                ),
-              )
-            : Stack(
+            ? _buildLoadingState()
+            : Column(
                 children: [
-                  // Camera preview
-                  if (_cameraController != null &&
-                      _cameraController!.value.isInitialized)
-                    Positioned.fill(child: CameraPreview(_cameraController!)),
-
-                  // Gradient overlay
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.3),
-                            Colors.transparent,
-                            Colors.transparent,
-                            Colors.black.withOpacity(0.7),
-                          ],
-                          stops: const [0, 0.2, 0.6, 1],
-                        ),
-                      ),
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
                     ),
-                  ),
-
-                  // Face frame
-                  Center(
-                    child: Container(
-                      width: 260,
-                      height: 340,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(130),
-                        border: Border.all(color: _getFrameColor(), width: 3),
-                      ),
-                    ),
-                  ),
-
-                  // Top bar
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    right: 16,
                     child: Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white),
-                            onPressed: () =>
-                                Supabase.instance.client.auth.signOut(),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                        _GlassButton(
+                          icon: Icons.close_rounded,
+                          onTap: () => Supabase.instance.client.auth.signOut(),
                         ),
                         const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
-                            vertical: 10,
+                            vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: _getFrameColor().withOpacity(0.9),
+                            color: scheme.primary.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            _statusMessage,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                            border: Border.all(
+                              color: scheme.primary.withOpacity(0.3),
                             ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.face_retouching_natural,
+                                color: scheme.primary,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Face Enrollment',
+                                style: TextStyle(
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const Spacer(),
                         const SizedBox(width: 48),
                       ],
                     ),
+                  ).animate().fade().slideY(begin: -0.2),
+
+                  // Camera area
+                  Expanded(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Camera preview
+                        if (_cameraController != null &&
+                            _cameraController!.value.isInitialized)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: CameraPreview(_cameraController!),
+                            ),
+                          ),
+
+                        // Animated face frame
+                        AnimatedBuilder(
+                          animation: _pulseController,
+                          builder: (context, child) {
+                            final scale = 1.0 + (_pulseController.value * 0.02);
+                            return Transform.scale(
+                              scale: _livenessVerified ? 1.0 : scale,
+                              child: Container(
+                                width: 260,
+                                height: 340,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(130),
+                                  border: Border.all(
+                                    color: _getFrameColor(),
+                                    width: 4,
+                                  ),
+                                  boxShadow: _livenessVerified
+                                      ? [
+                                          BoxShadow(
+                                            color: const Color(
+                                              0xFF10B981,
+                                            ).withOpacity(0.4),
+                                            blurRadius: 30,
+                                            spreadRadius: 5,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                        // Status badge
+                        Positioned(
+                          top: 20,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getFrameColor().withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(
+                                color: _getFrameColor().withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_livenessVerified)
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF10B981),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                Text(
+                                  _statusMessage,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ).animate().fade().slideY(begin: -0.2),
+                        ),
+                      ],
+                    ),
                   ),
 
                   // Bottom panel
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          // Progress indicators
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _StepDot(
-                                label: 'Detect',
-                                isComplete: _detectedFace != null,
-                                isActive: _detectedFace == null,
-                              ),
-                              _StepLine(isComplete: _detectedFace != null),
-                              _StepDot(
-                                label: 'Align',
-                                isComplete: _alignment?.isAligned ?? false,
-                                isActive:
-                                    _detectedFace != null &&
-                                    !(_alignment?.isAligned ?? false),
-                              ),
-                              _StepLine(
-                                isComplete: _alignment?.isAligned ?? false,
-                              ),
-                              _StepDot(
-                                label: 'Verify',
-                                isComplete: _livenessVerified,
-                                isActive:
-                                    (_alignment?.isAligned ?? false) &&
-                                    !_livenessVerified,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Enroll button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 56,
-                            child: ElevatedButton(
-                              onPressed: _livenessVerified && !_isEnrolling
-                                  ? _enrollFace
-                                  : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6366F1),
-                                foregroundColor: Colors.white,
-                                disabledBackgroundColor: Colors.grey.shade700,
-                                disabledForegroundColor: Colors.grey.shade500,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: _isEnrolling
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Save Face',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ],
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(32),
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, -5),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Progress steps
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _StepIndicator(
+                              step: 1,
+                              label: 'Detect',
+                              isComplete: _detectedFace != null,
+                              isActive: _detectedFace == null,
+                            ),
+                            _StepLine(isComplete: _detectedFace != null),
+                            _StepIndicator(
+                              step: 2,
+                              label: 'Align',
+                              isComplete: _alignment?.isAligned ?? false,
+                              isActive:
+                                  _detectedFace != null &&
+                                  !(_alignment?.isAligned ?? false),
+                            ),
+                            _StepLine(
+                              isComplete: _alignment?.isAligned ?? false,
+                            ),
+                            _StepIndicator(
+                              step: 3,
+                              label: 'Verify',
+                              isComplete: _livenessVerified,
+                              isActive:
+                                  (_alignment?.isAligned ?? false) &&
+                                  !_livenessVerified,
+                            ),
+                          ],
+                        ).animate().fade(delay: 200.ms),
+                        const SizedBox(height: 28),
+
+                        // Enroll button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: _livenessVerified && !_isEnrolling
+                                ? _enrollFace
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: scheme.primary,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.shade200,
+                              disabledForegroundColor: Colors.grey.shade400,
+                              elevation: _livenessVerified ? 8 : 0,
+                              shadowColor: scheme.primary.withOpacity(0.4),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: _isEnrolling
+                                ? Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      const Text('Saving...'),
+                                    ],
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: const [
+                                      Icon(Icons.save_rounded),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Save Face',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ).animate().fade(delay: 300.ms).scale(),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -406,20 +548,80 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
     );
   }
 
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const CircularProgressIndicator(
+              strokeWidth: 3,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Preparing camera...',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.7),
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Color _getFrameColor() {
-    if (_detectedFace == null) return Colors.grey;
+    if (_detectedFace == null) return Colors.white.withOpacity(0.3);
     if (!(_alignment?.isAligned ?? false)) return const Color(0xFFF59E0B);
     if (!_livenessVerified) return const Color(0xFF6366F1);
     return const Color(0xFF10B981);
   }
 }
 
-class _StepDot extends StatelessWidget {
+// Glass button
+class _GlassButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _GlassButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withOpacity(0.15)),
+          ),
+          child: Icon(icon, color: Colors.white, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+// Step indicator
+class _StepIndicator extends StatelessWidget {
+  final int step;
   final String label;
   final bool isComplete;
   final bool isActive;
 
-  const _StepDot({
+  const _StepIndicator({
+    required this.step,
     required this.label,
     required this.isComplete,
     required this.isActive,
@@ -433,28 +635,37 @@ class _StepDot extends StatelessWidget {
     } else if (isActive) {
       color = const Color(0xFF6366F1);
     } else {
-      color = Colors.grey.shade600;
+      color = Colors.grey.shade300;
     }
 
     return Column(
       children: [
         Container(
-          width: 32,
-          height: 32,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             color: isComplete ? color : Colors.transparent,
-            border: Border.all(color: color, width: 2),
+            border: Border.all(color: color, width: 3),
             shape: BoxShape.circle,
           ),
-          child: isComplete
-              ? const Icon(Icons.check, color: Colors.white, size: 18)
-              : null,
+          child: Center(
+            child: isComplete
+                ? const Icon(Icons.check_rounded, color: Colors.white, size: 22)
+                : Text(
+                    '$step',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+          ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           label,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 13,
             color: color,
             fontWeight: isActive || isComplete
                 ? FontWeight.w600
@@ -466,6 +677,7 @@ class _StepDot extends StatelessWidget {
   }
 }
 
+// Step connector line
 class _StepLine extends StatelessWidget {
   final bool isComplete;
 
@@ -474,10 +686,13 @@ class _StepLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 40,
-      height: 2,
-      margin: const EdgeInsets.only(bottom: 20),
-      color: isComplete ? const Color(0xFF10B981) : Colors.grey.shade600,
+      width: 50,
+      height: 3,
+      margin: const EdgeInsets.only(bottom: 24, left: 8, right: 8),
+      decoration: BoxDecoration(
+        color: isComplete ? const Color(0xFF10B981) : Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(2),
+      ),
     );
   }
 }

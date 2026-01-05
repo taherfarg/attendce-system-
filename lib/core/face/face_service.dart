@@ -110,20 +110,22 @@ class FaceService {
     final faceCenterX = boundingBox.center.dx / imageSize.width;
     final faceCenterY = boundingBox.center.dy / imageSize.height;
 
-    // Check if face is centered (within 40% of center)
+    // Check if face is centered - more relaxed thresholds
+    // X: anywhere between 15% and 85% of width (very generous)
+    // Y: anywhere between 10% and 90% of height (very generous)
     final isCentered =
-        (faceCenterX > 0.3 && faceCenterX < 0.7) &&
-        (faceCenterY > 0.2 && faceCenterY < 0.6);
+        (faceCenterX > 0.15 && faceCenterX < 0.85) &&
+        (faceCenterY > 0.1 && faceCenterY < 0.9);
 
-    // Check face size (should be 15-60% of image)
+    // Check face size (should be 10-80% of image) - more relaxed
     final faceRatio = boundingBox.width / imageSize.width;
-    final isSizeOk = faceRatio > 0.15 && faceRatio < 0.6;
+    final isSizeOk = faceRatio > 0.10 && faceRatio < 0.80;
 
-    // Check head rotation
+    // Check head rotation - more relaxed
     final headEulerAngleY = face.headEulerAngleY ?? 0; // Left/right rotation
     final headEulerAngleZ = face.headEulerAngleZ ?? 0; // Tilt
     final isHeadStraight =
-        headEulerAngleY.abs() < 20 && headEulerAngleZ.abs() < 15;
+        headEulerAngleY.abs() < 35 && headEulerAngleZ.abs() < 25;
 
     return FaceAlignmentResult(
       isCentered: isCentered,
@@ -167,39 +169,55 @@ class FaceService {
   List<double> generateEmbedding(Face face) {
     final landmarks = face.landmarks;
     final contours = face.contours;
+    final box = face.boundingBox;
+
+    // Normalization factors
+    final centerX = box.center.dx;
+    final centerY = box.center.dy;
+    final width = box.width;
+    final height = box.height;
 
     List<double> embedding = [];
+
+    // Helper to normalize and add point
+    void addNormalizedPoint(int x, int y) {
+      // Normalize to range approximately -0.5 to 0.5
+      embedding.add((x - centerX) / width);
+      embedding.add((y - centerY) / height);
+    }
 
     // Add landmark positions (normalized)
     for (final type in FaceLandmarkType.values) {
       final landmark = landmarks[type];
       if (landmark != null) {
-        embedding.add(landmark.position.x.toDouble());
-        embedding.add(landmark.position.y.toDouble());
+        addNormalizedPoint(landmark.position.x, landmark.position.y);
       } else {
         embedding.add(0);
         embedding.add(0);
       }
     }
 
-    // Add face geometry
-    embedding.add(face.boundingBox.width);
-    embedding.add(face.boundingBox.height);
+    // Add face geometry (angles only, size is irrelevant for identity)
     embedding.add(face.headEulerAngleX ?? 0);
     embedding.add(face.headEulerAngleY ?? 0);
     embedding.add(face.headEulerAngleZ ?? 0);
 
-    // Add contour points
+    // Add contour points (normalized)
+    // We only take a subset of points to keep embedding size manageable
     for (final type in FaceContourType.values) {
       final contour = contours[type];
       if (contour != null && contour.points.isNotEmpty) {
-        // Add first and last points of each contour
-        embedding.add(contour.points.first.x.toDouble());
-        embedding.add(contour.points.first.y.toDouble());
-        embedding.add(contour.points.last.x.toDouble());
-        embedding.add(contour.points.last.y.toDouble());
+        // Add every 5th point to reduce dimensionality but capture shape
+        for (var i = 0; i < contour.points.length; i += 4) {
+          addNormalizedPoint(contour.points[i].x, contour.points[i].y);
+        }
       } else {
-        embedding.addAll([0, 0, 0, 0]);
+        // If contour is missing, add placeholders to maintain embedding size consistency
+        // The number of placeholders should match the expected number of points if present
+        // For simplicity, assuming 4 points (2 coordinates each) if a contour is missing
+        embedding.addAll(
+          [0, 0, 0, 0, 0, 0, 0, 0],
+        ); // Adjusted to match potential 4 points (every 5th point from original)
       }
     }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/auth/auth_service.dart';
 import '../../../core/utils/error_handler.dart';
+import 'signup_page.dart';
 
 /// Modern minimal login page with animations
 class LoginPage extends StatefulWidget {
@@ -67,9 +68,7 @@ class _LoginPageState extends State<LoginPage>
         ),
         behavior: SnackBarBehavior.floating,
         backgroundColor: Colors.red.shade400,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -99,20 +98,20 @@ class _LoginPageState extends State<LoginPage>
 
               // Logo/Icon
               Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: scheme.outlineVariant.withOpacity(0.5),
-                  ),
-                ),
-                child: Icon(
-                  Icons.fingerprint_rounded,
-                  size: 40,
-                  color: scheme.primary,
-                ),
-              )
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withOpacity(0.5),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.fingerprint_rounded,
+                      size: 40,
+                      color: scheme.primary,
+                    ),
+                  )
                   .animate()
                   .fade(duration: 600.ms)
                   .slideY(begin: -0.5, end: 0, curve: Curves.easeOutBack),
@@ -146,14 +145,13 @@ class _LoginPageState extends State<LoginPage>
                 builder: (context, child) {
                   return Transform.translate(
                     offset: Offset(
-                        10 *
-                            (
-                                // Math: sin(progress * pi * wraps) * decay
-                                (1 - _shakeController.value) *
-                                    ((_shakeController.value * 20)
-                                            .remainder(2) -
-                                        1)),
-                        0),
+                      10 *
+                          (
+                          // Math: sin(progress * pi * wraps) * decay
+                          (1 - _shakeController.value) *
+                              ((_shakeController.value * 20).remainder(2) - 1)),
+                      0,
+                    ),
                     child: child,
                   );
                 },
@@ -206,7 +204,8 @@ class _LoginPageState extends State<LoginPage>
                                 : Icons.visibility_off_outlined,
                           ),
                           onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword),
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
                         ),
                       ),
                     ).animate().fade(delay: 550.ms).slideY(begin: 0.2),
@@ -242,6 +241,36 @@ class _LoginPageState extends State<LoginPage>
               ).animate().fade(delay: 700.ms).scale(),
 
               const SizedBox(height: 24),
+
+              // Sign up link
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SignupPage()),
+                  ),
+                  child: RichText(
+                    text: TextSpan(
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                      children: [
+                        const TextSpan(text: "Don't have an account? "),
+                        TextSpan(
+                          text: 'Sign Up',
+                          style: TextStyle(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ).animate().fade(delay: 800.ms),
+
+              const SizedBox(height: 16),
 
               // Footer
               Center(

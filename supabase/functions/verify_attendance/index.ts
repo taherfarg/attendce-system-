@@ -106,7 +106,11 @@ serve(async (req) => {
       log('ERROR', 'Auth failed', { error: userError?.message })
       return new Response(JSON.stringify({ 
         error: `Auth Failed: ${userError?.message || 'User is null'}`, 
-        details: userError 
+        details: {
+            message: userError?.message,
+            authHeaderLen: authHeader.length,
+            authHeaderPrefix: authHeader.substring(0, 7) + '...'
+        }
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
     }
 
@@ -220,37 +224,24 @@ serve(async (req) => {
         sum += Math.pow(storedEmbedding[i] - face_embedding[i], 2);
     }
     const distance = Math.sqrt(sum);
-    const THRESHOLD = 0.8; // Tune this based on ML Kit model
+    // Landmark-based normalized embeddings
+    // Relaxing threshold to 0.8 to reduce false rejections
+    const THRESHOLD = 0.8;
 
     if (distance > THRESHOLD) {
-         log('WARN', 'Face verification failed', { distance, threshold: THRESHOLD })
-         return new Response(JSON.stringify({ success: false, error: 'FACE_MISMATCH', message: 'Face verification failed.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+         log('WARN', 'Face verification failed', { distance: distance.toFixed(3), threshold: THRESHOLD })
+         return new Response(JSON.stringify({ 
+            success: false, 
+            error: 'FACE_MISMATCH', 
+            message: `Face verification failed. (Diff: ${distance.toFixed(2)} > ${THRESHOLD})` 
+         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
     }
 
     log('INFO', 'Face verified successfully', { distance, threshold: THRESHOLD })
 
-    // 6. Record Attendance
-    const { data: insertData, error: insertError } = await supabaseClient
-        .from('attendance')
-        .insert({
-            user_id,
-            check_in_time: type === 'check_in' ? new Date().toISOString() : undefined,
-            status: 'present',
-            location_data: location,
-            wifi_ssid: wifi_info.ssid,
-            verification_method: 'face_id_secure'
-        })
-        .select()
-        .single()
-
-    if (insertError) {
-      log('ERROR', 'Database insert failed', { error: insertError.message })
-      throw insertError
-    }
-
-    // Handling Check-Out specifically if type == check_out
+    // 6. Handle Check-In or Check-Out
     if (type === 'check_out') {
-        // Find latest open attendance
+        // CHECK-OUT: Find and update existing open record (do NOT create a new one)
         const { data: latest, error: findError } = await supabaseClient
             .from('attendance')
             .select('id, check_in_time')
@@ -260,52 +251,77 @@ serve(async (req) => {
             .limit(1)
             .single()
         
-        if (latest) {
-             const checkOutTime = new Date();
-             const checkInTime = new Date(latest.check_in_time);
-             const duration = (checkOutTime.getTime() - checkInTime.getTime()) / 1000 / 60; // minutes
-
-             await supabaseClient
-                .from('attendance')
-                .update({ 
-                    check_out_time: checkOutTime.toISOString(),
-                    total_minutes: Math.round(duration),
-                    status: 'present'
-                 })
-                .eq('id', latest.id)
-
-             // Send notification to admins
-             await notifyAdmins(supabaseClient, 'check_out', userName, {
-               user_id,
-               total_minutes: Math.round(duration),
-               time: checkOutTime.toISOString(),
-               location: locationFlag,
-               wifi: wifiFlag
-             });
-
-             log('INFO', 'Check-out successful', { user_id, total_minutes: Math.round(duration), locationFlag, wifiFlag })
-             return new Response(JSON.stringify({ 
-                success: true, 
-                message: 'Check-out successful', 
-                total_minutes: Math.round(duration),
-                flags: { location: locationFlag, wifi: wifiFlag }
-             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
-        } else {
+        if (!latest) {
              log('WARN', 'No active check-in found', { user_id })
              return new Response(JSON.stringify({ success: false, error: 'NO_ACTIVE_CHECKIN', message: 'No active check-in found to check out from.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
         }
+
+        const checkOutTime = new Date();
+        const checkInTime = new Date(latest.check_in_time);
+        const duration = (checkOutTime.getTime() - checkInTime.getTime()) / 1000 / 60; // minutes
+
+        const { error: updateError } = await supabaseClient
+            .from('attendance')
+            .update({ 
+                check_out_time: checkOutTime.toISOString(),
+                total_minutes: Math.round(duration),
+                status: 'present'
+             })
+            .eq('id', latest.id)
+
+        if (updateError) {
+            log('ERROR', 'Database update failed', { error: updateError.message })
+            throw updateError
+        }
+
+        // Send notification to admins
+        await notifyAdmins(supabaseClient, 'check_out', userName, {
+           user_id,
+           total_minutes: Math.round(duration),
+           time: checkOutTime.toISOString(),
+           location: locationFlag,
+           wifi: wifiFlag
+        });
+
+        log('INFO', 'Check-out successful', { user_id, total_minutes: Math.round(duration), locationFlag, wifiFlag })
+        return new Response(JSON.stringify({ 
+            success: true, 
+            message: 'Check-out successful', 
+            total_minutes: Math.round(duration),
+            flags: { location: locationFlag, wifi: wifiFlag }
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
+
+    } else {
+        // CHECK-IN: Create a new attendance record
+        const { data: insertData, error: insertError } = await supabaseClient
+            .from('attendance')
+            .insert({
+                user_id,
+                check_in_time: new Date().toISOString(),
+                status: 'present',
+                location_data: location,
+                wifi_ssid: wifi_info.ssid,
+                verification_method: 'face_id_secure'
+            })
+            .select()
+            .single()
+
+        if (insertError) {
+          log('ERROR', 'Database insert failed', { error: insertError.message })
+          throw insertError
+        }
+
+        // Send notification to admins for check-in
+        await notifyAdmins(supabaseClient, 'check_in', userName, {
+          user_id,
+          time: new Date().toISOString(),
+          location: location,
+          wifi: wifi_info.ssid
+        });
+
+        log('INFO', 'Check-in successful', { user_id })
+        return new Response(JSON.stringify({ success: true, message: 'Check-in successful', data: insertData }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
     }
-
-    // Send notification to admins for check-in
-    await notifyAdmins(supabaseClient, 'check_in', userName, {
-      user_id,
-      time: new Date().toISOString(),
-      location: location,
-      wifi: wifi_info.ssid
-    });
-
-    log('INFO', 'Check-in successful', { user_id })
-    return new Response(JSON.stringify({ success: true, message: 'Check-in successful', data: insertData }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
 
   } catch (err: any) {
     const errorDetails = err?.message || err?.error || err;

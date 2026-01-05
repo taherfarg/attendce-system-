@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import '../../../core/auth/auth_service.dart';
 import 'admin_users_page.dart';
 import 'admin_reports_page.dart';
@@ -8,7 +9,7 @@ import 'admin_notifications_page.dart';
 import '../profile/face_test_page.dart';
 import '../../../core/utils/time_utils.dart';
 
-/// Modern minimal admin dashboard
+/// Modern admin dashboard with attendance rate and improved layout
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
 
@@ -22,10 +23,13 @@ class _AdminHomePageState extends State<AdminHomePage> {
   int _todayCheckIns = 0;
   int _totalEmployees = 0;
   int _activeNow = 0;
+  int _totalHoursToday = 0;
   List<Map<String, dynamic>> _liveActivity = [];
   bool _isLoading = true;
-
   String? _errorMessage;
+
+  DateTime _selectedDate = DateTime.now();
+  final _dateFormat = DateFormat('EEE, MMM d');
 
   @override
   void initState() {
@@ -42,17 +46,22 @@ class _AdminHomePageState extends State<AdminHomePage> {
     try {
       final client = Supabase.instance.client;
       final today = TimeUtils.nowDubai();
-      // Start of Dubai day
       final startOfDay = DateTime(today.year, today.month, today.day);
-      // Convert to UTC for database query (Dubai is UTC+4)
       final startOfDayUtc = startOfDay.subtract(const Duration(hours: 4));
 
       // 1. Fetch Stats
       final checkInsResponse = await client
           .from('attendance')
-          .select('id')
+          .select('id, total_minutes')
           .gte('check_in_time', startOfDayUtc.toIso8601String());
       _todayCheckIns = (checkInsResponse as List).length;
+
+      // Calculate total hours today
+      int totalMinutes = 0;
+      for (var record in checkInsResponse) {
+        totalMinutes += (record['total_minutes'] ?? 0) as int;
+      }
+      _totalHoursToday = totalMinutes;
 
       final employeesResponse = await client
           .from('users')
@@ -68,7 +77,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
           .isFilter('check_out_time', null);
       _activeNow = (activeResponse as List).length;
 
-      // 2. Fetch Live Activity (Try simple fetch first if join fails)
+      // 2. Fetch Live Activity with join
       try {
         final activityResponse = await client
             .from('attendance')
@@ -83,7 +92,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
         }
       } catch (joinError) {
         debugPrint('Join failed: $joinError');
-        // Fallback: Fetch without join to at least show times
         final fallbackResponse = await client
             .from('attendance')
             .select()
@@ -93,7 +101,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         if (mounted) {
           setState(() {
             _liveActivity = List<Map<String, dynamic>>.from(fallbackResponse);
-            _errorMessage = "User details missing: $joinError";
+            _errorMessage = "User details missing";
           });
         }
       }
@@ -110,13 +118,17 @@ class _AdminHomePageState extends State<AdminHomePage> {
     }
   }
 
+  double get _attendanceRate {
+    if (_totalEmployees == 0) return 0;
+    return (_todayCheckIns / _totalEmployees).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      backgroundColor: scheme.background,
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadDashboardData,
@@ -134,76 +146,45 @@ class _AdminHomePageState extends State<AdminHomePage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Welcome, Admin',
-                              style: textTheme.bodyLarge?.copyWith(
-                                color: scheme.onSurfaceVariant,
+                              _dateFormat.format(TimeUtils.nowDubai()),
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              'Dashboard',
-                              style: textTheme.headlineMedium?.copyWith(
+                            const Text(
+                              'Admin Dashboard',
+                              style: TextStyle(
+                                fontSize: 28,
                                 fontWeight: FontWeight.w700,
-                                color: scheme.onSurface,
-                                letterSpacing: -1.0,
+                                color: Color(0xFF1E293B),
+                                letterSpacing: -0.5,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        onPressed: () {
-                          // Show error if exists
-                          if (_errorMessage != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(_errorMessage!)),
-                            );
-                          }
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AdminNotificationsPage(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.notifications_outlined),
-                        style: IconButton.styleFrom(
-                          backgroundColor: scheme.surface,
-                          foregroundColor: scheme.onSurfaceVariant,
-                          side: BorderSide(
-                            color: scheme.outlineVariant.withOpacity(0.5),
+                      _IconBtn(
+                        icon: Icons.notifications_outlined,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminNotificationsPage(),
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: () {
-                          _loadDashboardData();
-                        },
-                        icon: Icon(
-                          Icons.refresh_rounded,
-                          color: _errorMessage != null
-                              ? scheme.error
-                              : scheme.onSurfaceVariant,
-                        ),
-                        style: IconButton.styleFrom(
-                          backgroundColor: scheme.surface,
-                          foregroundColor: scheme.onSurfaceVariant,
-                          side: BorderSide(
-                            color: _errorMessage != null
-                                ? scheme.error
-                                : scheme.outlineVariant.withOpacity(0.5),
-                          ),
-                        ),
+                      _IconBtn(
+                        icon: Icons.refresh_rounded,
+                        onTap: _loadDashboardData,
+                        isError: _errorMessage != null,
                       ),
                       const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: () => _authService.signOut(),
-                        icon: const Icon(Icons.logout_rounded),
-                        style: IconButton.styleFrom(
-                          backgroundColor: scheme.errorContainer,
-                          foregroundColor: scheme.error,
-                        ),
+                      _IconBtn(
+                        icon: Icons.logout_rounded,
+                        onTap: () => _authService.signOut(),
+                        isLogout: true,
                       ),
                     ],
                   ),
@@ -223,62 +204,159 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       color: scheme.errorContainer,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
-                      _errorMessage!,
-                      style: TextStyle(color: scheme.error, fontSize: 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: scheme.error,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(color: scheme.error, fontSize: 13),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
 
-              // Stats grid
+              // Stats Row + Attendance Rate
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _isLoading && _todayCheckIns == 0
-                      ? Center(
+                  child: _isLoading
+                      ? const Center(
                           child: Padding(
-                            padding: const EdgeInsets.all(40),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: scheme.primary,
-                            ),
+                            padding: EdgeInsets.all(40),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         )
                       : Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _StatCard(
-                                value: _todayCheckIns.toString(),
-                                label: 'Check-ins',
-                                icon: Icons.login_rounded,
-                                color: scheme.secondary, // Teal
-                              ),
+                            // Attendance Rate Circle
+                            _AttendanceRateCard(
+                              rate: _attendanceRate,
+                              checkedIn: _todayCheckIns,
+                              total: _totalEmployees,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 16),
+                            // Stats Column
                             Expanded(
-                              child: _StatCard(
-                                value: _totalEmployees.toString(),
-                                label: 'Employees',
-                                icon: Icons.people_rounded,
-                                color: scheme.primary, // Slate
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _StatCard(
-                                value: _activeNow.toString(),
-                                label: 'Active',
-                                icon: Icons.circle,
-                                color: const Color(
-                                  0xFFF59E0B,
-                                ), // Amber (kept for status)
+                              child: Column(
+                                children: [
+                                  _MiniStatCard(
+                                    icon: Icons.people_rounded,
+                                    value: _totalEmployees.toString(),
+                                    label: 'Total Employees',
+                                    color: scheme.primary,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _MiniStatCard(
+                                    icon: Icons.circle,
+                                    value: _activeNow.toString(),
+                                    label: 'Currently Active',
+                                    color: const Color(0xFF22C55E),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _MiniStatCard(
+                                    icon: Icons.schedule_rounded,
+                                    value: '${_totalHoursToday ~/ 60}h',
+                                    label: 'Total Hours Today',
+                                    color: scheme.secondary,
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+              // Quick Actions Grid
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Quick Actions',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _QuickActionCard(
+                              icon: Icons.people_outline_rounded,
+                              label: 'Users',
+                              color: scheme.primary,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AdminUsersPage(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _QuickActionCard(
+                              icon: Icons.analytics_outlined,
+                              label: 'Reports',
+                              color: scheme.secondary,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AdminReportsPage(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _QuickActionCard(
+                              icon: Icons.settings_outlined,
+                              label: 'Settings',
+                              color: const Color(0xFF8B5CF6),
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AdminSettingsPage(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _QuickActionCard(
+                              icon: Icons.face_retouching_natural,
+                              label: 'Face Test',
+                              color: const Color(0xFFF59E0B),
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const FaceTestPage(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
               // Live Activity Header
               SliverToBoxAdapter(
@@ -289,21 +367,41 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: scheme.errorContainer,
+                          color: const Color(0xFFEF4444).withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          Icons.live_tv_rounded,
-                          color: scheme.error,
-                          size: 16,
+                        child: const Icon(
+                          Icons.sensors_rounded,
+                          color: Color(0xFFEF4444),
+                          size: 18,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Text(
+                      const Text(
                         'Live Activity',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurface,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_liveActivity.length} entries',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],
@@ -318,28 +416,23 @@ class _AdminHomePageState extends State<AdminHomePage> {
                 sliver: _liveActivity.isEmpty
                     ? SliverToBoxAdapter(
                         child: Container(
-                          padding: const EdgeInsets.all(32),
-                          alignment: Alignment.center,
+                          padding: const EdgeInsets.all(40),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: scheme.outlineVariant.withOpacity(0.5),
-                            ),
+                            border: Border.all(color: Colors.grey.shade200),
                           ),
                           child: Column(
                             children: [
                               Icon(
-                                Icons.history_toggle_off_rounded,
+                                Icons.hourglass_empty_rounded,
                                 size: 48,
-                                color: scheme.outline,
+                                color: Colors.grey.shade400,
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 _isLoading ? 'Loading...' : 'No activity today',
-                                style: TextStyle(
-                                  color: scheme.onSurfaceVariant,
-                                ),
+                                style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ],
                           ),
@@ -348,210 +441,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     : SliverList(
                         delegate: SliverChildBuilderDelegate((context, index) {
                           final record = _liveActivity[index];
-                          final userData =
-                              record['users'] as Map<String, dynamic>? ?? {};
-                          final checkIn = TimeUtils.toDubai(
-                            DateTime.parse(record['check_in_time']),
-                          );
-                          final checkOutStr = record['check_out_time'];
-                          final checkOut = checkOutStr != null
-                              ? TimeUtils.toDubai(DateTime.parse(checkOutStr))
-                              : null;
-
-                          // Calculate duration
-                          final duration = checkOut != null
-                              ? checkOut.difference(checkIn)
-                              : TimeUtils.nowDubai().difference(checkIn);
-                          final hours = duration.inHours;
-                          final minutes = duration.inMinutes.remainder(60);
-                          final durationStr = '${hours}h ${minutes}m';
-
-                          final isActive = checkOut == null;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: scheme.outlineVariant.withOpacity(0.5),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.02),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: isActive
-                                      ? scheme.secondary
-                                      : scheme.surfaceVariant,
-                                  foregroundColor: isActive
-                                      ? Colors.white
-                                      : scheme.onSurfaceVariant,
-                                  child: Text(
-                                    (userData['name'] ?? '?')[0].toUpperCase(),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        userData['name'] ?? 'Unknown Employee',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 15,
-                                        ),
-                                      ),
-                                      Text(
-                                        userData['role']
-                                                ?.toString()
-                                                .toUpperCase() ??
-                                            'EMPLOYEE',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: scheme.onSurfaceVariant,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isActive
-                                            ? scheme.primary.withOpacity(0.05)
-                                            : scheme.surfaceVariant,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        isActive
-                                            ? 'Working ($durationStr)'
-                                            : 'Done ($durationStr)',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: isActive
-                                              ? scheme.primary
-                                              : scheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'In: ${_formatTime(checkIn)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                    if (checkOut != null)
-                                      Text(
-                                        'Out: ${_formatTime(checkOut)}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: scheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
+                          return _ActivityCard(record: record);
                         }, childCount: _liveActivity.length),
                       ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-              // Menu header
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'Management',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-              // Menu items
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      _MenuItem(
-                        icon: Icons.people_outline_rounded,
-                        title: 'Users',
-                        subtitle: 'Manage employees',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AdminUsersPage(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _MenuItem(
-                        icon: Icons.analytics_outlined,
-                        title: 'Reports',
-                        subtitle: 'View attendance logs',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AdminReportsPage(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _MenuItem(
-                        icon: Icons.settings_outlined,
-                        title: 'Settings',
-                        subtitle: 'Configure system',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AdminSettingsPage(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _MenuItem(
-                        icon: Icons.face_retouching_natural,
-                        title: 'Face Test',
-                        subtitle: 'Debug face matching',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const FaceTestPage(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
@@ -560,45 +452,166 @@ class _AdminHomePageState extends State<AdminHomePage> {
       ),
     );
   }
+}
 
-  String _formatTime(DateTime dt) {
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+// Icon Button
+class _IconBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isError;
+  final bool isLogout;
+
+  const _IconBtn({
+    required this.icon,
+    required this.onTap,
+    this.isError = false,
+    this.isLogout = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: isLogout ? scheme.errorContainer : Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: isLogout
+                ? null
+                : Border.all(
+                    color: isError ? scheme.error : Colors.grey.shade200,
+                  ),
+          ),
+          child: Icon(
+            icon,
+            size: 22,
+            color: isLogout
+                ? scheme.error
+                : (isError ? scheme.error : Colors.grey.shade700),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-class _StatCard extends StatelessWidget {
+// Attendance Rate Card with circular progress
+class _AttendanceRateCard extends StatelessWidget {
+  final double rate;
+  final int checkedIn;
+  final int total;
+
+  const _AttendanceRateCard({
+    required this.rate,
+    required this.checkedIn,
+    required this.total,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final percentage = (rate * 100).round();
+
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.secondary.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            width: 100,
+            height: 100,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 100,
+                  height: 100,
+                  child: CircularProgressIndicator(
+                    value: rate,
+                    strokeWidth: 10,
+                    backgroundColor: Colors.grey.shade100,
+                    valueColor: AlwaysStoppedAnimation(scheme.secondary),
+                    strokeCap: StrokeCap.round,
+                  ),
+                ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '$percentage%',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Attendance Rate',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$checkedIn of $total',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Mini Stat Card
+class _MiniStatCard extends StatelessWidget {
+  final IconData icon;
   final String value;
   final String label;
-  final IconData icon;
   final Color color;
 
-  const _StatCard({
+  const _MiniStatCard({
+    required this.icon,
     required this.value,
     required this.label,
-    required this.icon,
     required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
@@ -608,22 +621,26 @@ class _StatCard extends StatelessWidget {
             ),
             child: Icon(icon, color: color, size: 20),
           ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w700,
-              color: color,
-              letterSpacing: -1,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ],
@@ -632,88 +649,201 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _MenuItem extends StatelessWidget {
+// Quick Action Card
+class _QuickActionCard extends StatelessWidget {
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String label;
+  final Color color;
   final VoidCallback onTap;
 
-  const _MenuItem({
+  const _QuickActionCard({
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.label,
+    required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Activity Card
+class _ActivityCard extends StatelessWidget {
+  final Map<String, dynamic> record;
+
+  const _ActivityCard({required this.record});
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final userData = record['users'] as Map<String, dynamic>? ?? {};
+    final checkIn = TimeUtils.toDubai(DateTime.parse(record['check_in_time']));
+    final checkOutStr = record['check_out_time'];
+    final checkOut = checkOutStr != null
+        ? TimeUtils.toDubai(DateTime.parse(checkOutStr))
+        : null;
+
+    final duration = checkOut != null
+        ? checkOut.difference(checkIn)
+        : TimeUtils.nowDubai().difference(checkIn);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final durationStr = '${hours}h ${minutes}m';
+
+    final isActive = checkOut == null;
+    final name = userData['name'] ?? 'Unknown';
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+    final timeFormat = DateFormat('HH:mm');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.01),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
+      child: Row(
+        children: [
+          // Avatar
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isActive
+                    ? [scheme.secondary, scheme.secondary.withOpacity(0.7)]
+                    : [Colors.grey.shade300, Colors.grey.shade400],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: scheme.onSurfaceVariant, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: Color(0xFF1E293B),
                   ),
                 ),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: scheme.onSurfaceVariant.withOpacity(0.5),
-                  size: 16,
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      timeFormat.format(checkIn),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    Text(' → ', style: TextStyle(color: Colors.grey.shade400)),
+                    Text(
+                      checkOut != null ? timeFormat.format(checkOut) : 'Now',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isActive
+                            ? scheme.secondary
+                            : Colors.grey.shade600,
+                        fontWeight: isActive
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
+          // Status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? scheme.secondary.withOpacity(0.1)
+                  : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isActive)
+                  Container(
+                    width: 6,
+                    height: 6,
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(
+                      color: scheme.secondary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                Text(
+                  durationStr,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isActive ? scheme.secondary : Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

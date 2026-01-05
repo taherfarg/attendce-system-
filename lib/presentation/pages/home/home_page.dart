@@ -1,15 +1,17 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // [NEW]
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/auth/auth_service.dart';
 import '../../../core/services/offline_queue.dart';
 import '../attendance/face_scan_page.dart';
 import '../../../data/repositories/attendance_repository.dart';
-import '../../../data/models/attendance_model.dart'; // [NEW]
+import '../../../data/models/attendance_model.dart';
 import '../../../core/utils/time_utils.dart';
-import '../../common_widgets/shimmer_loading.dart'; // [NEW]
+import '../../common_widgets/shimmer_loading.dart';
 
-/// Modern minimal employee home page
+/// Modern employee dashboard with live timer and weekly stats
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -22,10 +24,20 @@ class _HomePageState extends State<HomePage> {
   final _repo = AttendanceRepository();
   final _offlineQueue = OfflineQueueService();
 
-  List<AttendanceModel> _history = []; // [MODIFY] Typed list
+  List<AttendanceModel> _history = [];
   bool _isLoading = true;
   int _pendingCount = 0;
-  AttendanceModel? _todayRecord; // [MODIFY] Typed model
+  AttendanceModel? _todayRecord;
+  String _userName = '';
+
+  // Weekly stats
+  int _weeklyMinutes = 0;
+  int _daysPresent = 0;
+  List<bool> _weekDays = List.filled(7, false); // Mon-Sun
+
+  // Live timer
+  Timer? _liveTimer;
+  Duration _elapsedTime = Duration.zero;
 
   final _timeFormat = DateFormat('HH:mm');
   final _dateFormat = DateFormat('EEE, MMM d');
@@ -36,32 +48,70 @@ class _HomePageState extends State<HomePage> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _liveTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
     try {
+      // Load user name
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId != null) {
+        final userData = await Supabase.instance.client
+            .from('users')
+            .select('name')
+            .eq('id', userId)
+            .maybeSingle();
+        _userName = userData?['name'] ?? 'Employee';
+      }
+
       final data = await _repo.getHistory();
       final pending = await _offlineQueue.getPendingCount();
 
       final now = TimeUtils.nowDubai();
 
-      // logic: Find today's records
+      // Get start of current week (Monday)
+      final weekStart = now.subtract(Duration(days: now.weekday - 1));
+      final startOfWeek = DateTime(
+        weekStart.year,
+        weekStart.month,
+        weekStart.day,
+      );
+
+      // Calculate weekly stats
+      int weeklyMinutes = 0;
+      Set<int> presentDays = {};
+      List<bool> weekDays = List.filled(7, false);
+
+      for (var record in data) {
+        final checkIn = TimeUtils.toDubai(record.checkInTime);
+        if (checkIn.isAfter(startOfWeek)) {
+          weeklyMinutes += record.totalMinutes;
+          final dayIndex = checkIn.weekday - 1; // Mon=0, Sun=6
+          if (dayIndex >= 0 && dayIndex < 7) {
+            weekDays[dayIndex] = true;
+            presentDays.add(checkIn.day);
+          }
+        }
+      }
+
+      // Find today's records
       final todayRecords = data.where((r) {
-        // Models are already parsed, just convert to Dubai time for comparison if needed
-        // Assuming checkInTime in model is UTC or needs conversion
         final checkIn = TimeUtils.toDubai(r.checkInTime);
         return checkIn.year == now.year &&
             checkIn.month == now.month &&
             checkIn.day == now.day;
       }).toList();
 
-      // logic: Determine "Today's Status"
+      // Determine "Today's Status"
       AttendanceModel? statusRecord;
       try {
-        // Find active record (no check out)
         statusRecord = todayRecords.firstWhere((r) => r.checkOutTime == null);
       } catch (_) {
-        // No active record, take the first one (latest) if exists
         if (todayRecords.isNotEmpty) {
           statusRecord = todayRecords.first;
         }
@@ -72,16 +122,52 @@ class _HomePageState extends State<HomePage> {
           _history = data;
           _pendingCount = pending;
           _todayRecord = statusRecord;
+          _weeklyMinutes = weeklyMinutes;
+          _daysPresent = presentDays.length;
+          _weekDays = weekDays;
           _isLoading = false;
         });
+
+        // Start live timer if checked in
+        _startLiveTimer();
       }
     } catch (e) {
       debugPrint("Error loading data: $e");
       if (mounted) {
         setState(() => _isLoading = false);
-        // Optional: Show error snackbar here using ErrorHandler
       }
     }
+  }
+
+  void _startLiveTimer() {
+    _liveTimer?.cancel();
+
+    if (_todayRecord != null && _todayRecord!.isCheckedIn) {
+      // Calculate initial elapsed time
+      final checkIn = TimeUtils.toDubai(_todayRecord!.checkInTime);
+      final now = TimeUtils.nowDubai();
+      _elapsedTime = now.difference(checkIn);
+
+      // Update every second
+      _liveTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) {
+          setState(() {
+            _elapsedTime += const Duration(seconds: 1);
+          });
+        }
+      });
+    }
+  }
+
+  String _formatElapsedTime(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '${hours}h ${minutes.toString().padLeft(2, '0')}m ${seconds.toString().padLeft(2, '0')}s';
+    }
+    return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
   }
 
   void _goCheckIn() {
@@ -98,8 +184,16 @@ class _HomePageState extends State<HomePage> {
     ).then((_) => _loadData());
   }
 
+  String _getGreeting() {
+    final hour = TimeUtils.nowDubai().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isCheckedIn = _todayRecord?.isCheckedIn ?? false;
     final isComplete = _todayRecord?.isComplete ?? false;
 
@@ -108,16 +202,16 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadData,
-          color: Theme.of(context).colorScheme.primary,
+          color: scheme.primary,
           child: _isLoading
-              ? const ShimmerList(itemCount: 6, height: 90) // Pro Loading State
+              ? const ShimmerList(itemCount: 6, height: 90)
               : CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    // App bar
+                    // Header with greeting
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                         child: Row(
                           children: [
                             Expanded(
@@ -125,21 +219,23 @@ class _HomePageState extends State<HomePage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Good ${_getGreeting()}',
+                                    _getGreeting(),
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey.shade600,
                                     ),
                                   ).animate().fade().slideX(begin: -0.2),
                                   const SizedBox(height: 4),
-                                  const Text(
-                                    'Dashboard',
-                                    style: TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF1E293B),
-                                    ),
-                                  )
+                                  Text(
+                                        _userName.isNotEmpty
+                                            ? _userName
+                                            : 'Dashboard',
+                                        style: const TextStyle(
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      )
                                       .animate()
                                       .fade(delay: 100.ms)
                                       .slideX(begin: -0.2),
@@ -190,19 +286,21 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
 
-                    // Status card
+                    // Live Status Card
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: _StatusCard(
+                        child: _LiveStatusCard(
                           isCheckedIn: isCheckedIn,
                           isComplete: isComplete,
+                          elapsedTime: _elapsedTime,
                           todayRecord: _todayRecord,
                           timeFormat: _timeFormat,
-                        ).animate().fade(duration: 500.ms).slideY(begin: 0.1),
+                          formatElapsedTime: _formatElapsedTime,
+                        ).animate().fade(duration: 400.ms).slideY(begin: 0.05),
                       ),
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
                     // Action buttons
                     SliverToBoxAdapter(
@@ -233,19 +331,44 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                    // Weekly Summary
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _WeeklySummary(
+                          weekDays: _weekDays,
+                          totalMinutes: _weeklyMinutes,
+                          daysPresent: _daysPresent,
+                        ).animate().fade(delay: 350.ms).slideY(begin: 0.05),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
                     // History header
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Text(
-                          'Recent Activity',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade800,
-                          ),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Recent Activity',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${_history.length} records',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -289,13 +412,13 @@ class _HomePageState extends State<HomePage> {
                               return null;
                             final item = _history[index];
                             return _HistoryItem(
-                              item: item,
-                              timeFormat: _timeFormat,
-                              dateFormat: _dateFormat,
-                            )
+                                  item: item,
+                                  timeFormat: _timeFormat,
+                                  dateFormat: _dateFormat,
+                                )
                                 .animate()
-                                .fade(duration: 400.ms, delay: (50 * index).ms)
-                                .slideX(begin: 0.1);
+                                .fade(duration: 300.ms, delay: (50 * index).ms)
+                                .slideX(begin: 0.05);
                           },
                           childCount: _history.length > 7 ? 7 : _history.length,
                         ),
@@ -307,59 +430,57 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'morning';
-    if (hour < 17) return 'afternoon';
-    return 'evening';
-  }
 }
 
-class _StatusCard extends StatelessWidget {
+// Live Status Card with gradient and timer
+class _LiveStatusCard extends StatelessWidget {
   final bool isCheckedIn;
   final bool isComplete;
+  final Duration elapsedTime;
   final AttendanceModel? todayRecord;
   final DateFormat timeFormat;
+  final String Function(Duration) formatElapsedTime;
 
-  const _StatusCard({
+  const _LiveStatusCard({
     required this.isCheckedIn,
     required this.isComplete,
+    required this.elapsedTime,
     required this.todayRecord,
     required this.timeFormat,
+    required this.formatElapsedTime,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    Color bgColor;
-    Color textColor;
+    List<Color> gradientColors;
     String status;
     IconData icon;
+    String timerText;
 
     if (isCheckedIn) {
-      bgColor = scheme.primary; // Slate-900 (Active)
-      textColor = Colors.white;
-      status = 'Working';
+      gradientColors = [const Color(0xFF0F172A), const Color(0xFF1E3A5F)];
+      status = 'Currently Working';
       icon = Icons.timer_outlined;
+      timerText = formatElapsedTime(elapsedTime);
     } else if (isComplete) {
-      bgColor = scheme.secondary; // Teal (Complete)
-      textColor = Colors.white;
+      gradientColors = [const Color(0xFF0D9488), const Color(0xFF14B8A6)];
       status = 'Day Complete';
       icon = Icons.check_circle_outlined;
+      timerText = todayRecord != null
+          ? '${todayRecord!.totalMinutes ~/ 60}h ${todayRecord!.totalMinutes % 60}m'
+          : '0h 0m';
     } else {
-      bgColor = Colors.white;
-      textColor = scheme.onSurfaceVariant; // Slate-500
+      gradientColors = [Colors.grey.shade300, Colors.grey.shade400];
       status = 'Not Checked In';
       icon = Icons.schedule;
+      timerText = '--:--';
     }
 
-    // Parse times to Local (DUBAI)
     DateTime? checkInTime;
     DateTime? checkOutTime;
     if (todayRecord != null) {
-      // Assuming models are already in UTC or correct zone, convert to Dubai
       checkInTime = TimeUtils.toDubai(todayRecord!.checkInTime);
       if (todayRecord!.checkOutTime != null) {
         checkOutTime = TimeUtils.toDubai(todayRecord!.checkOutTime!);
@@ -369,84 +490,165 @@ class _StatusCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-        border: isCheckedIn || isComplete
-            ? null
-            : Border.all(color: scheme.outlineVariant),
-        boxShadow: isCheckedIn || isComplete
-            ? [
-                BoxShadow(
-                  color: bgColor.withOpacity(0.2),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: textColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: textColor, size: 28),
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: gradientColors.first.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Today\'s Status',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: textColor.withOpacity(0.7),
-                    fontWeight: FontWeight.w500,
-                  ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  status,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: textColor,
-                    letterSpacing: -0.5,
-                  ),
+                child: Icon(icon, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Today\'s Status',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      status,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                if (checkInTime != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
+              ),
+              const Spacer(),
+              if (isCheckedIn)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade400,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
                     children: [
-                      Text(
-                        'In: ${timeFormat.format(checkInTime)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: textColor.withOpacity(0.9),
-                          fontWeight: FontWeight.w500,
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      if (checkOutTime != null) ...[
-                        Text(
-                          '  •  ',
-                          style: TextStyle(color: textColor.withOpacity(0.5)),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'LIVE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
                         ),
-                        Text(
-                          'Out: ${timeFormat.format(checkOutTime)}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: textColor.withOpacity(0.9),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                      ),
                     ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Timer display
+          Center(
+            child: Text(
+              timerText,
+              style: const TextStyle(
+                fontSize: 42,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: -1,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Check-in/out times
+          if (checkInTime != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _TimeChip(label: 'In', time: timeFormat.format(checkInTime)),
+                if (checkOutTime != null) ...[
+                  const SizedBox(width: 16),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white.withOpacity(0.5),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 16),
+                  _TimeChip(
+                    label: 'Out',
+                    time: timeFormat.format(checkOutTime),
                   ),
                 ],
               ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimeChip extends StatelessWidget {
+  final String label;
+  final String time;
+
+  const _TimeChip({required this.label, required this.time});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.white.withOpacity(0.7),
+            ),
+          ),
+          Text(
+            time,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
             ),
           ),
         ],
@@ -455,6 +657,169 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
+// Weekly Summary Widget
+class _WeeklySummary extends StatelessWidget {
+  final List<bool> weekDays;
+  final int totalMinutes;
+  final int daysPresent;
+
+  const _WeeklySummary({
+    required this.weekDays,
+    required this.totalMinutes,
+    required this.daysPresent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final avgMinutes = daysPresent > 0 ? totalMinutes ~/ daysPresent : 0;
+    final days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.calendar_today_rounded,
+                size: 18,
+                color: scheme.primary,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'This Week',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Week dots
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(7, (index) {
+              final isPresent = weekDays[index];
+              return Column(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: isPresent
+                          ? scheme.secondary
+                          : Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: isPresent
+                          ? const Icon(
+                              Icons.check,
+                              color: Colors.white,
+                              size: 16,
+                            )
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    days[index],
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isPresent
+                          ? scheme.secondary
+                          : Colors.grey.shade400,
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ),
+          const SizedBox(height: 20),
+          // Stats row
+          Row(
+            children: [
+              Expanded(
+                child: _StatItem(
+                  label: 'Total Hours',
+                  value: '${totalMinutes ~/ 60}h ${totalMinutes % 60}m',
+                  icon: Icons.access_time_filled,
+                  color: scheme.primary,
+                ),
+              ),
+              Container(width: 1, height: 40, color: Colors.grey.shade200),
+              Expanded(
+                child: _StatItem(
+                  label: 'Avg/Day',
+                  value: '${avgMinutes ~/ 60}h ${avgMinutes % 60}m',
+                  icon: Icons.trending_up_rounded,
+                  color: scheme.secondary,
+                ),
+              ),
+              Container(width: 1, height: 40, color: Colors.grey.shade200),
+              Expanded(
+                child: _StatItem(
+                  label: 'Days',
+                  value: '$daysPresent',
+                  icon: Icons.event_available_rounded,
+                  color: const Color(0xFFF59E0B),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _StatItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+        ),
+      ],
+    );
+  }
+}
+
+// Action Button
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -473,34 +838,33 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color =
-        isPrimary ? scheme.primary : scheme.secondary; // Slate or Teal
+    final color = isPrimary ? scheme.primary : scheme.secondary;
 
     return Material(
       color: isEnabled ? color : scheme.surface,
       borderRadius: BorderRadius.circular(16),
       elevation: isEnabled ? 4 : 0,
-      shadowColor: color.withOpacity(0.2),
+      shadowColor: color.withOpacity(0.3),
       child: InkWell(
         onTap: isEnabled ? onTap : null,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: isEnabled ? null : Border.all(color: scheme.outlineVariant),
           ),
-          child: Column(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                size: 32,
+                size: 24,
                 color: isEnabled
                     ? Colors.white
                     : scheme.onSurfaceVariant.withOpacity(0.5),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
@@ -519,6 +883,7 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
+// History Item
 class _HistoryItem extends StatelessWidget {
   final AttendanceModel item;
   final DateFormat timeFormat;
@@ -530,24 +895,13 @@ class _HistoryItem extends StatelessWidget {
     required this.dateFormat,
   });
 
-  String _formatDuration(int minutes) {
-    if (minutes == 0) return '0m';
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    if (h > 0) return '${h}h ${m}m';
-    return '${m}m';
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-
-    // IMPORTANT: Parse to Dubai Time for Display!
     final checkIn = TimeUtils.toDubai(item.checkInTime);
     final checkOut = item.checkOutTime != null
         ? TimeUtils.toDubai(item.checkOutTime!)
         : null;
-
     final isComplete = item.isComplete;
     final minutes = item.totalMinutes;
 
@@ -558,13 +912,6 @@ class _HistoryItem extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         children: [
@@ -574,11 +921,13 @@ class _HistoryItem extends StatelessWidget {
               color: isComplete
                   ? scheme.secondary.withOpacity(0.1)
                   : scheme.surfaceVariant,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              isComplete ? Icons.check : Icons.access_time_filled,
-              size: 20,
+              isComplete
+                  ? Icons.check_circle_rounded
+                  : Icons.access_time_filled,
+              size: 22,
               color: isComplete ? scheme.secondary : scheme.onSurfaceVariant,
             ),
           ),
@@ -608,15 +957,15 @@ class _HistoryItem extends StatelessWidget {
           ),
           if (isComplete)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: scheme.secondary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                _formatDuration(minutes),
+                '${minutes ~/ 60}h ${minutes % 60}m',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: scheme.secondary,
                 ),

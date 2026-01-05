@@ -37,7 +37,7 @@ class AttendanceModel {
             ? DateTime.parse(json['check_out_time'])
             : null,
         formattedAddress: json['formatted_address'] as String?,
-        gpsCoordinates: json['gps_coordinates'] as Map<String, dynamic>?,
+        gpsCoordinates: json['location_data'] as Map<String, dynamic>?,
         wifiSsid: json['wifi_ssid'] as String?,
         status: json['status'] as String? ?? 'present',
         totalMinutes: (json['total_minutes'] as num?)?.toInt() ?? 0,

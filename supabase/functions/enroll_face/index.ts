@@ -54,7 +54,14 @@ serve(async (req) => {
 
     if (userError || !user) {
       log('ERROR', 'Authentication failed', { error: userError?.message })
-      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
+      return new Response(JSON.stringify({ 
+        error: 'Invalid or expired token',
+        details: {
+            message: userError?.message,
+            authHeaderLen: authHeader.length,
+            authHeaderPrefix: authHeader.substring(0, 10) + '...'
+        }
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
     }
 
     // Create service role client for DB operations (bypasses RLS)
