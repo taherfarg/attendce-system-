@@ -116,6 +116,53 @@ class AuthService {
     }
   }
 
+  /// Get user role and check face enrollment status
+  /// Returns a Map with 'role' and 'hasEnrolledFace'
+  Future<Map<String, dynamic>> getUserStatus() async {
+    final user = _client.auth.currentUser;
+    if (user == null) throw AuthException('User not logged in');
+
+    try {
+      // Fetch user role
+      var userResponse = await _client
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      String role;
+      if (userResponse == null) {
+        // Create profile if missing
+        await _client.from('users').insert({
+          'id': user.id,
+          'name': user.email?.split('@')[0] ?? 'User',
+          'role': 'employee',
+          'status': 'active',
+        });
+        role = 'employee';
+      } else {
+        role = userResponse['role'] as String;
+      }
+
+      bool hasEnrolledFace = true;
+      if (role == 'employee') {
+        final faceResponse = await _client
+            .from('face_profiles')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        hasEnrolledFace = faceResponse != null;
+      }
+
+      return {
+        'role': role,
+        'hasEnrolledFace': hasEnrolledFace,
+      };
+    } catch (e) {
+      throw AuthException('Failed to load user status: $e');
+    }
+  }
+
   /// Parse Supabase auth errors into user-friendly messages
   String _parseAuthError(String message) {
     if (message.contains('Invalid login credentials')) {

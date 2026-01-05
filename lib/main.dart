@@ -9,6 +9,7 @@ import 'presentation/pages/profile/enrollment_page.dart';
 import 'core/services/offline_queue.dart';
 import 'core/config/app_config.dart';
 import 'core/utils/time_utils.dart';
+import 'core/auth/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -172,6 +173,7 @@ class RoleRouter extends StatefulWidget {
 }
 
 class _RoleRouterState extends State<RoleRouter> {
+  final _authService = AuthService();
   bool _isLoading = true;
   String? _role;
   bool _hasEnrolledFace = false;
@@ -185,56 +187,21 @@ class _RoleRouterState extends State<RoleRouter> {
 
   Future<void> _loadUserInfo() async {
     try {
-      final client = Supabase.instance.client;
-      final userId = client.auth.currentUser?.id;
-
-      if (userId == null) {
+      final status = await _authService.getUserStatus();
+      if (mounted) {
+        setState(() {
+          _role = status['role'];
+          _hasEnrolledFace = status['hasEnrolledFace'];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           _isLoading = false;
-          _error = 'User not found';
+          _error = e.toString().replaceAll('AuthException: ', '');
         });
-        return;
       }
-
-      // Fetch user role
-      final userResponse = await client
-          .from('users')
-          .select('role')
-          .eq('id', userId)
-          .maybeSingle();
-
-      if (userResponse == null) {
-        // User exists in auth but not in users table - create profile
-        await client.from('users').insert({
-          'id': userId,
-          'name': client.auth.currentUser?.email?.split('@')[0] ?? 'User',
-          'role': 'employee',
-          'status': 'active',
-        });
-        _role = 'employee';
-      } else {
-        _role = userResponse['role'] as String;
-      }
-
-      // Check if user has enrolled face (only for employees)
-      if (_role == 'employee') {
-        final faceResponse = await client
-            .from('face_profiles')
-            .select('id')
-            .eq('user_id', userId)
-            .maybeSingle();
-
-        _hasEnrolledFace = faceResponse != null;
-      } else {
-        _hasEnrolledFace = true; // Admins don't need face enrollment
-      }
-
-      setState(() => _isLoading = false);
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.toString();
-      });
     }
   }
 
