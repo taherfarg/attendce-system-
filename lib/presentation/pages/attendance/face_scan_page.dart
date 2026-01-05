@@ -219,7 +219,6 @@ class _FaceScanPageState extends State<FaceScanPage>
         await _queueOffline();
       }
     } catch (e) {
-    } catch (e) {
       final error = e.toString();
       if (error.contains('JWT') || error.contains('401')) {
         _showSessionExpired();
@@ -247,14 +246,14 @@ class _FaceScanPageState extends State<FaceScanPage>
         await _attendanceRepo.checkIn(
           userId: userId,
           faceEmbedding: _currentEmbedding!,
-          location: _locationData ?? {},
+          location: _locationData ?? {'lat': 0.0, 'lng': 0.0},
           wifiInfo: _wifiData ?? {'ssid': 'unknown', 'bssid': 'unknown'},
         );
       } else {
         await _attendanceRepo.checkOut(
           userId: userId,
           faceEmbedding: _currentEmbedding!,
-          location: _locationData ?? {},
+          location: _locationData ?? {'lat': 0.0, 'lng': 0.0},
           wifiInfo: _wifiData ?? {'ssid': 'unknown', 'bssid': 'unknown'},
         );
       }

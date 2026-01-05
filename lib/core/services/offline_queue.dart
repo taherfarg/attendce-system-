@@ -11,6 +11,9 @@ class OfflineQueueService {
   final Connectivity _connectivity = Connectivity();
   StreamSubscription? _connectivitySubscription;
 
+  /// Maximum retry attempts before giving up on a record
+  static const int maxRetries = 5;
+
   /// Initialize the database
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -108,6 +111,14 @@ class OfflineQueueService {
     final client = Supabase.instance.client;
 
     for (final record in pending) {
+      // Skip records that have exceeded max retries
+      final retryCount = record['retry_count'] as int? ?? 0;
+      if (retryCount >= maxRetries) {
+        failed++;
+        errors.add('Record ${record['id']}: Max retries exceeded');
+        continue;
+      }
+
       try {
         final response = await client.functions.invoke(
           'verify_attendance',

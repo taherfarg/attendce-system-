@@ -24,6 +24,10 @@ class _EnrollmentPageState extends State<EnrollmentPage>
   bool _isEnrolling = false;
   String _statusMessage = 'Starting camera...';
 
+  // Throttle frame processing to prevent lag
+  DateTime _lastProcessedTime = DateTime.now();
+  static const _processInterval = Duration(milliseconds: 200);
+
   Face? _detectedFace;
   FaceAlignmentResult? _alignment;
 
@@ -45,6 +49,7 @@ class _EnrollmentPageState extends State<EnrollmentPage>
 
   Future<void> _initializeCamera() async {
     try {
+      // Request camera permission first
       final status = await Permission.camera.request();
       if (status.isDenied || status.isPermanentlyDenied) {
         if (mounted) {
@@ -63,9 +68,22 @@ class _EnrollmentPageState extends State<EnrollmentPage>
         return;
       }
 
-      await _faceService.initialize();
+      if (mounted) {
+        setState(() => _statusMessage = 'Initializing...');
+      }
 
-      final cameras = await availableCameras();
+      // Run face service init and camera enumeration in PARALLEL
+      final results = await Future.wait([
+        _faceService.initialize(),
+        availableCameras(),
+      ]);
+
+      final cameras = results[1] as List<CameraDescription>;
+
+      if (cameras.isEmpty) {
+        throw Exception('No cameras found on device');
+      }
+
       final frontCamera = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
@@ -73,12 +91,18 @@ class _EnrollmentPageState extends State<EnrollmentPage>
 
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.medium,
+        ResolutionPreset.low, // Use low resolution to prevent lag
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.nv21,
       );
 
       await _cameraController!.initialize();
+
+      // Small delay to ensure camera is fully ready
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      if (!mounted) return;
+
       await _cameraController!.startImageStream(_processImage);
 
       if (mounted) {
@@ -88,20 +112,64 @@ class _EnrollmentPageState extends State<EnrollmentPage>
         });
       }
     } catch (e) {
+      debugPrint('Camera initialization error: $e');
       if (mounted) {
         setState(() {
           _isInitializing = false;
-          _statusMessage = 'Camera error: $e';
+          _statusMessage = 'Camera error';
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to start camera: ${e.toString().split('\n').first}',
+            ),
+            backgroundColor: Colors.red.shade400,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () {
+                setState(() {
+                  _isInitializing = true;
+                  _statusMessage = 'Starting camera...';
+                });
+                _initializeCamera();
+              },
+            ),
+          ),
+        );
       }
     }
   }
 
   Future<void> _processImage(CameraImage image) async {
     if (_isProcessing || _isEnrolling) return;
+
+    // Throttle: skip frames that come too quickly
+    final now = DateTime.now();
+    if (now.difference(_lastProcessedTime) < _processInterval) {
+      return;
+    }
+    _lastProcessedTime = now;
+
     _isProcessing = true;
 
     try {
+      // Validate image planes are accessible
+      if (image.planes.isEmpty) {
+        _isProcessing = false;
+        return;
+      }
+
+      // Check if buffer is accessible (avoid the "buffer is inaccessible" error)
+      try {
+        final _ = image.planes.first.bytes;
+      } catch (e) {
+        // Buffer is not accessible, skip this frame
+        _isProcessing = false;
+        return;
+      }
+
       final inputImage = _faceService.convertCameraImageToInputImage(
         image,
         _cameraController!.description,
@@ -351,11 +419,23 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                         // Camera preview
                         if (_cameraController != null &&
                             _cameraController!.value.isInitialized)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: CameraPreview(_cameraController!),
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  width: _cameraController!
+                                      .value
+                                      .previewSize!
+                                      .height,
+                                  height: _cameraController!
+                                      .value
+                                      .previewSize!
+                                      .width,
+                                  child: CameraPreview(_cameraController!),
+                                ),
+                              ),
                             ),
                           ),
 
@@ -566,10 +646,27 @@ class _EnrollmentPageState extends State<EnrollmentPage>
           ),
           const SizedBox(height: 24),
           Text(
-            'Preparing camera...',
+            _statusMessage,
             style: TextStyle(
               color: Colors.white.withOpacity(0.7),
               fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 32),
+          // Add sign out button for users stuck on loading
+          TextButton.icon(
+            onPressed: () => Supabase.instance.client.auth.signOut(),
+            icon: Icon(
+              Icons.logout,
+              color: Colors.white.withOpacity(0.5),
+              size: 18,
+            ),
+            label: Text(
+              'Sign Out',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 14,
+              ),
             ),
           ),
         ],

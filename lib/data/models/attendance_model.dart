@@ -101,7 +101,7 @@ class AttendanceModel {
   /// Check if user was late (check-in after 9 AM by default)
   bool isLate({int workStartHour = 9}) {
     // Assuming checkInTime is already in local/Dubai time from repository or adjusted in utils
-    return checkInTime.hour >= workStartHour;
+    return checkInTime.hour > workStartHour;
   }
 
   /// Check if user left early (before 5 PM if totalMinutes < 8 hours)

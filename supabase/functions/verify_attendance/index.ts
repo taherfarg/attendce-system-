@@ -251,6 +251,13 @@ serve(async (req) => {
             .limit(1)
             .single()
         
+        if (findError && findError.code !== 'PGRST116') {
+             // PGRST116 means "no rows found" - that's expected when there's no active check-in
+             // Any other error is a real database problem
+             log('ERROR', 'Database error finding check-in', { error: findError.message })
+             return new Response(JSON.stringify({ success: false, error: 'DATABASE_ERROR', message: 'Failed to check attendance status.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 })
+        }
+
         if (!latest) {
              log('WARN', 'No active check-in found', { user_id })
              return new Response(JSON.stringify({ success: false, error: 'NO_ACTIVE_CHECKIN', message: 'No active check-in found to check out from.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
