@@ -5,7 +5,7 @@ import 'dart:math' show cos, sqrt, asin, pi;
 class LocationService {
   /// Check and request location permissions
   Future<bool> checkAndRequestPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return false;
     }

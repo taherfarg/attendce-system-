@@ -55,7 +55,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
   Future<void> _initialize() async {
     try {
       // 1. Request permissions explicitly
-      Map<Permission, PermissionStatus> statuses = await [
+      final Map<Permission, PermissionStatus> statuses = await [
         Permission.camera,
         Permission.location,
       ].request();
@@ -74,7 +74,7 @@ class _FaceScanPageState extends State<FaceScanPage> {
       }
 
       // 2. Check if Location Services (GPS) are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (mounted) {
           _showLocationServiceDialog();

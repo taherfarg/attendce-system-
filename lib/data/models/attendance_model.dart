@@ -28,29 +28,33 @@ class AttendanceModel {
 
   /// Create from Supabase JSON response
   factory AttendanceModel.fromJson(Map<String, dynamic> json) {
-    return AttendanceModel(
-      id: json['id'] as String,
-      userId: json['user_id'] as String,
-      checkInTime: DateTime.parse(json['check_in_time'] as String),
-      checkOutTime: json['check_out_time'] != null
-          ? DateTime.parse(json['check_out_time'] as String)
-          : null,
-      formattedAddress: json['formatted_address'] as String?,
-      gpsCoordinates: json['gps_coordinates'] as Map<String, dynamic>?,
-      wifiSsid: json['wifi_ssid'] as String?,
-      status: json['status'] as String? ?? 'present',
-      totalMinutes: json['total_minutes'] as int? ?? 0,
-      verificationMethod: json['verification_method'] as String? ?? 'face_id',
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
-    );
+    try {
+      return AttendanceModel(
+        id: json['id']?.toString() ?? '',
+        userId: json['user_id']?.toString() ?? '',
+        checkInTime: DateTime.parse(json['check_in_time']),
+        checkOutTime: json['check_out_time'] != null
+            ? DateTime.parse(json['check_out_time'])
+            : null,
+        formattedAddress: json['formatted_address'] as String?,
+        gpsCoordinates: json['gps_coordinates'] as Map<String, dynamic>?,
+        wifiSsid: json['wifi_ssid'] as String?,
+        status: json['status'] as String? ?? 'present',
+        totalMinutes: (json['total_minutes'] as num?)?.toInt() ?? 0,
+        verificationMethod: json['verification_method'] as String? ?? 'face_id',
+        createdAt: json['created_at'] != null
+            ? DateTime.parse(json['created_at'])
+            : DateTime.now(),
+      );
+    } catch (e) {
+      throw FormatException('Error parsing AttendanceModel: $e');
+    }
   }
 
   /// Check if this is a complete attendance record (has check-out)
   bool get isComplete => checkOutTime != null;
 
-  /// Check if still checked in
+  /// Check if still checked in (Active)
   bool get isCheckedIn => checkOutTime == null;
 
   /// Get work duration as Duration object
@@ -76,7 +80,7 @@ class AttendanceModel {
     }
   }
 
-  /// Get status display text
+  /// Get status display text for UI
   String get statusDisplay {
     switch (status) {
       case 'present':
@@ -88,12 +92,15 @@ class AttendanceModel {
       case 'early_out':
         return 'Left Early';
       default:
-        return status;
+        // Capitalize first letter
+        if (status.isEmpty) return 'Unknown';
+        return status[0].toUpperCase() + status.substring(1);
     }
   }
 
   /// Check if user was late (check-in after 9 AM by default)
   bool isLate({int workStartHour = 9}) {
+    // Assuming checkInTime is already in local/Dubai time from repository or adjusted in utils
     return checkInTime.hour >= workStartHour;
   }
 

@@ -103,7 +103,7 @@ class OfflineQueueService {
     final pending = await getPendingRecords();
     int synced = 0;
     int failed = 0;
-    List<String> errors = [];
+    final List<String> errors = [];
 
     final client = Supabase.instance.client;
 
@@ -130,9 +130,10 @@ class OfflineQueueService {
           await deleteRecord(record['id'] as int);
           synced++;
         } else {
-          await updateRetryInfo(record['id'] as int, response.data.toString());
+          final errorMsg = response.data?.toString() ?? 'Unknown sync error';
+          await updateRetryInfo(record['id'] as int, errorMsg);
           failed++;
-          errors.add('Record ${record['id']}: ${response.data}');
+          errors.add('Record ${record['id']}: $errorMsg');
         }
       } catch (e) {
         await updateRetryInfo(record['id'] as int, e.toString());

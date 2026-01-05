@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // [NEW]
 import '../../../core/auth/auth_service.dart';
 import '../../../core/services/offline_queue.dart';
 import '../attendance/face_scan_page.dart';
 import '../../../data/repositories/attendance_repository.dart';
+import '../../../data/models/attendance_model.dart'; // [NEW]
 import '../../../core/utils/time_utils.dart';
+import '../../common_widgets/shimmer_loading.dart'; // [NEW]
 
 /// Modern minimal employee home page
 class HomePage extends StatefulWidget {
@@ -19,10 +22,10 @@ class _HomePageState extends State<HomePage> {
   final _repo = AttendanceRepository();
   final _offlineQueue = OfflineQueueService();
 
-  List<Map<String, dynamic>> _history = [];
+  List<AttendanceModel> _history = []; // [MODIFY] Typed list
   bool _isLoading = true;
   int _pendingCount = 0;
-  Map<String, dynamic>? _todayRecord;
+  AttendanceModel? _todayRecord; // [MODIFY] Typed model
 
   final _timeFormat = DateFormat('HH:mm');
   final _dateFormat = DateFormat('EEE, MMM d');
@@ -43,27 +46,20 @@ class _HomePageState extends State<HomePage> {
       final now = TimeUtils.nowDubai();
 
       // logic: Find today's records
-      final todayRecords = data
-          .where((r) {
-            if (r == null) return false;
-            final checkIn = TimeUtils.toDubai(
-              DateTime.parse(r['check_in_time']),
-            );
-            return checkIn.year == now.year &&
-                checkIn.month == now.month &&
-                checkIn.day == now.day;
-          })
-          .cast<Map<String, dynamic>>()
-          .toList();
+      final todayRecords = data.where((r) {
+        // Models are already parsed, just convert to Dubai time for comparison if needed
+        // Assuming checkInTime in model is UTC or needs conversion
+        final checkIn = TimeUtils.toDubai(r.checkInTime);
+        return checkIn.year == now.year &&
+            checkIn.month == now.month &&
+            checkIn.day == now.day;
+      }).toList();
 
       // logic: Determine "Today's Status"
-      // Priority 1: Currently Active (check_out is null)
-      // Priority 2: Latest completed
-      Map<String, dynamic>? statusRecord;
+      AttendanceModel? statusRecord;
       try {
-        statusRecord = todayRecords.firstWhere(
-          (r) => r['check_out_time'] == null,
-        );
+        // Find active record (no check out)
+        statusRecord = todayRecords.firstWhere((r) => r.checkOutTime == null);
       } catch (_) {
         // No active record, take the first one (latest) if exists
         if (todayRecords.isNotEmpty) {
@@ -80,9 +76,10 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (e) {
-      debugPrint("Error: $e");
+      debugPrint("Error loading data: $e");
       if (mounted) {
         setState(() => _isLoading = false);
+        // Optional: Show error snackbar here using ErrorHandler
       }
     }
   }
@@ -103,19 +100,19 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isCheckedIn =
-        _todayRecord != null && _todayRecord!['check_out_time'] == null;
-    final isComplete =
-        _todayRecord != null && _todayRecord!['check_out_time'] != null;
+    final isCheckedIn = _todayRecord?.isCheckedIn ?? false;
+    final isComplete = _todayRecord?.isComplete ?? false;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadData,
+          color: Theme.of(context).colorScheme.primary,
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+              ? const ShimmerList(itemCount: 6, height: 90) // Pro Loading State
               : CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     // App bar
                     SliverToBoxAdapter(
@@ -133,7 +130,7 @@ class _HomePageState extends State<HomePage> {
                                       fontSize: 14,
                                       color: Colors.grey.shade600,
                                     ),
-                                  ),
+                                  ).animate().fade().slideX(begin: -0.2),
                                   const SizedBox(height: 4),
                                   const Text(
                                     'Dashboard',
@@ -142,7 +139,10 @@ class _HomePageState extends State<HomePage> {
                                       fontWeight: FontWeight.w700,
                                       color: Color(0xFF1E293B),
                                     ),
-                                  ),
+                                  )
+                                      .animate()
+                                      .fade(delay: 100.ms)
+                                      .slideX(begin: -0.2),
                                 ],
                               ),
                             ),
@@ -175,7 +175,7 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                   ],
                                 ),
-                              ),
+                              ).animate().scale(),
                             const SizedBox(width: 8),
                             IconButton(
                               onPressed: () => _authService.signOut(),
@@ -199,7 +199,7 @@ class _HomePageState extends State<HomePage> {
                           isComplete: isComplete,
                           todayRecord: _todayRecord,
                           timeFormat: _timeFormat,
-                        ),
+                        ).animate().fade(duration: 500.ms).slideY(begin: 0.1),
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 24)),
@@ -214,11 +214,10 @@ class _HomePageState extends State<HomePage> {
                               child: _ActionButton(
                                 icon: Icons.login_rounded,
                                 label: 'Check In',
-                                isEnabled:
-                                    !isCheckedIn, // Allow check-in as long as not currently checked in
+                                isEnabled: !isCheckedIn,
                                 isPrimary: true,
                                 onTap: _goCheckIn,
-                              ),
+                              ).animate().fade(delay: 200.ms).scale(),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -228,7 +227,7 @@ class _HomePageState extends State<HomePage> {
                                 isEnabled: isCheckedIn,
                                 isPrimary: false,
                                 onTap: _goCheckOut,
-                              ),
+                              ).animate().fade(delay: 300.ms).scale(),
                             ),
                           ],
                         ),
@@ -280,7 +279,7 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ],
                           ),
-                        ),
+                        ).animate().fade(delay: 400.ms),
                       )
                     else
                       SliverList(
@@ -293,7 +292,10 @@ class _HomePageState extends State<HomePage> {
                               item: item,
                               timeFormat: _timeFormat,
                               dateFormat: _dateFormat,
-                            );
+                            )
+                                .animate()
+                                .fade(duration: 400.ms, delay: (50 * index).ms)
+                                .slideX(begin: 0.1);
                           },
                           childCount: _history.length > 7 ? 7 : _history.length,
                         ),
@@ -317,7 +319,7 @@ class _HomePageState extends State<HomePage> {
 class _StatusCard extends StatelessWidget {
   final bool isCheckedIn;
   final bool isComplete;
-  final Map<String, dynamic>? todayRecord;
+  final AttendanceModel? todayRecord;
   final DateFormat timeFormat;
 
   const _StatusCard({
@@ -357,13 +359,10 @@ class _StatusCard extends StatelessWidget {
     DateTime? checkInTime;
     DateTime? checkOutTime;
     if (todayRecord != null) {
-      checkInTime = TimeUtils.toDubai(
-        DateTime.parse(todayRecord!['check_in_time']),
-      );
-      if (todayRecord!['check_out_time'] != null) {
-        checkOutTime = TimeUtils.toDubai(
-          DateTime.parse(todayRecord!['check_out_time']),
-        );
+      // Assuming models are already in UTC or correct zone, convert to Dubai
+      checkInTime = TimeUtils.toDubai(todayRecord!.checkInTime);
+      if (todayRecord!.checkOutTime != null) {
+        checkOutTime = TimeUtils.toDubai(todayRecord!.checkOutTime!);
       }
     }
 
@@ -474,9 +473,8 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = isPrimary
-        ? scheme.primary
-        : scheme.secondary; // Slate or Teal
+    final color =
+        isPrimary ? scheme.primary : scheme.secondary; // Slate or Teal
 
     return Material(
       color: isEnabled ? color : scheme.surface,
@@ -522,7 +520,7 @@ class _ActionButton extends StatelessWidget {
 }
 
 class _HistoryItem extends StatelessWidget {
-  final Map<String, dynamic> item;
+  final AttendanceModel item;
   final DateFormat timeFormat;
   final DateFormat dateFormat;
 
@@ -545,13 +543,13 @@ class _HistoryItem extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     // IMPORTANT: Parse to Dubai Time for Display!
-    final checkIn = TimeUtils.toDubai(DateTime.parse(item['check_in_time']));
-    final checkOut = item['check_out_time'] != null
-        ? TimeUtils.toDubai(DateTime.parse(item['check_out_time']))
+    final checkIn = TimeUtils.toDubai(item.checkInTime);
+    final checkOut = item.checkOutTime != null
+        ? TimeUtils.toDubai(item.checkOutTime!)
         : null;
 
-    final isComplete = checkOut != null;
-    final minutes = item['total_minutes'] ?? 0;
+    final isComplete = item.isComplete;
+    final minutes = item.totalMinutes;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
