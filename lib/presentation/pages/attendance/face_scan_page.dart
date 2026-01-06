@@ -37,6 +37,7 @@ class _FaceScanPageState extends State<FaceScanPage>
 
   String _statusMessage = 'Starting camera...';
   String _instruction = 'Position your face in the frame';
+  String? _cameraError;
 
   Face? _detectedFace;
   bool _faceReady = false;
@@ -111,11 +112,32 @@ class _FaceScanPageState extends State<FaceScanPage>
         });
       }
     } catch (e) {
+      debugPrint('Camera initialization error: $e');
       if (mounted) {
         setState(() {
           _isInitializing = false;
           _statusMessage = 'Camera error';
+          _cameraError = e.toString().split('\n').first;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start camera: $_cameraError'),
+            backgroundColor: Colors.red.shade400,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () {
+                setState(() {
+                  _isInitializing = true;
+                  _statusMessage = 'Starting camera...';
+                  _cameraError = null;
+                });
+                _initializeCamera();
+              },
+            ),
+          ),
+        );
       }
     }
   }
@@ -1072,59 +1094,6 @@ class _GlassButton extends StatelessWidget {
           child: Icon(icon, color: Colors.white, size: 22),
         ),
       ),
-    );
-  }
-}
-
-// Context chip
-class _ContextChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isReady;
-
-  const _ContextChip({
-    required this.icon,
-    required this.label,
-    required this.isReady,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isReady ? const Color(0xFF10B981) : Colors.grey.shade400;
-
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: color.withOpacity(0.3), width: 2),
-          ),
-          child: Icon(icon, color: color, size: 22),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isReady)
-              Container(
-                width: 6,
-                height: 6,
-                margin: const EdgeInsets.only(right: 4),
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

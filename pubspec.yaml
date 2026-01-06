@@ -52,6 +52,9 @@ dependencies:
   image: ^4.1.4
   flutter_dotenv: ^5.1.0
   timezone: ^0.10.1
+  mobile_scanner: 5.0.0
+  grouped_list: ^6.0.0
+  flutter_slidable: ^4.0.3
 
 dev_dependencies:
   flutter_test:

@@ -59,7 +59,7 @@ class MyApp extends StatelessWidget {
           secondary: const Color(0xFF0D9488), // Teal-600 (Accent)
           tertiary: const Color(0xFF64748B), // Slate-500 (Muted)
           surface: Colors.white,
-          background: const Color(0xFFF8FAFC),
+          surfaceContainerLowest: const Color(0xFFF8FAFC),
           error: const Color(0xFFEF4444), // Red-500
         ),
 

@@ -322,7 +322,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
                           Expanded(
                             child: _QuickActionCard(
                               icon: Icons.settings_outlined,
@@ -336,20 +335,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _QuickActionCard(
-                              icon: Icons.face_retouching_natural,
-                              label: 'Face Test',
-                              color: const Color(0xFFF59E0B),
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const FaceTestPage(),
-                                ),
-                              ),
-                            ),
-                          ),
+                          // Face Test Removed
                         ],
                       ),
                     ],

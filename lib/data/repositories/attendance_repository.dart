@@ -8,7 +8,8 @@ class AttendanceRepository {
 
   Future<void> checkIn({
     required String userId,
-    required List<double> faceEmbedding,
+    List<double>? faceEmbedding,
+    String? qrCode,
     required Map<String, dynamic> location,
     required Map<String, dynamic> wifiInfo,
   }) async {
@@ -17,7 +18,8 @@ class AttendanceRepository {
         'verify_attendance',
         body: {
           'user_id': userId,
-          'face_embedding': faceEmbedding,
+          if (faceEmbedding != null) 'face_embedding': faceEmbedding,
+          if (qrCode != null) 'qr_code': qrCode,
           'location': location,
           'wifi_info': wifiInfo,
           'type': 'check_in',
@@ -35,7 +37,8 @@ class AttendanceRepository {
 
   Future<void> checkOut({
     required String userId,
-    required List<double> faceEmbedding,
+    List<double>? faceEmbedding,
+    String? qrCode,
     required Map<String, dynamic> location,
     required Map<String, dynamic> wifiInfo,
   }) async {
@@ -44,7 +47,8 @@ class AttendanceRepository {
         'verify_attendance',
         body: {
           'user_id': userId,
-          'face_embedding': faceEmbedding,
+          if (faceEmbedding != null) 'face_embedding': faceEmbedding,
+          if (qrCode != null) 'qr_code': qrCode,
           'location': location,
           'wifi_info': wifiInfo,
           'type': 'check_out',

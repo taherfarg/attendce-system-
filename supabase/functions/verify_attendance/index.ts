@@ -11,7 +11,8 @@ const corsHeaders = {
 // Types
 interface AttendanceRequest {
   user_id: string;
-  face_embedding: number[];
+  face_embedding?: number[];
+  qr_code?: string;
   location: { lat: number; lng: number };
   wifi_info: { ssid: string; bssid: string };
   type: 'check_in' | 'check_out';
@@ -72,6 +73,8 @@ const notifyAdmins = async (
 }
 
 serve(async (req) => {
+  log('INFO', 'Starting verify_attendance [VERSION: 2.2 - QR Support]')
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -94,22 +97,32 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
     }
 
+    // Extract JWT token from Authorization header
+    const token = authHeader.replace('Bearer ', '');
+    
+    if (!token || token === authHeader) {
+      log('WARN', 'Invalid Authorization header format')
+      return new Response(JSON.stringify({ error: 'Invalid Authorization header format. Expected: Bearer <token>' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
+    }
+
     // Create client with anon key for user auth verification
     const anonClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } }
     })
 
-    // Verify User Token
-    const { data: { user }, error: userError } = await anonClient.auth.getUser()
+    // Verify User Token using the extracted JWT
+    const { data: { user }, error: userError } = await anonClient.auth.getUser(token)
     
     if (userError || !user) {
-      log('ERROR', 'Auth failed', { error: userError?.message })
+      log('ERROR', 'Auth failed', { error: userError?.message, code: userError?.code })
       return new Response(JSON.stringify({ 
-        error: `Auth Failed: ${userError?.message || 'User is null'}`, 
+        error: `Authentication failed: ${userError?.message || 'User session not found'}`, 
+        code: userError?.code,
+        hint: 'Please sign out and sign in again to refresh your session.',
         details: {
             message: userError?.message,
-            authHeaderLen: authHeader.length,
-            authHeaderPrefix: authHeader.substring(0, 7) + '...'
+            code: userError?.code,
+            tokenLen: token.length,
         }
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
     }
@@ -121,14 +134,14 @@ serve(async (req) => {
     log('INFO', 'User authenticated', { user_id: user.id })
 
     const body: AttendanceRequest = await req.json()
-    const { user_id, face_embedding, location, wifi_info, type } = body
+    const { user_id, face_embedding, qr_code, location, wifi_info, type } = body
 
     if (user.id !== user_id) {
        log('WARN', 'User ID mismatch', { token_user: user.id, request_user: user_id })
        return new Response(JSON.stringify({ error: 'User ID mismatch' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 })
     }
 
-    log('INFO', 'Processing attendance', { type, user_id })
+    log('INFO', 'Processing attendance', { type, user_id, method: qr_code ? 'QR' : 'FACE' })
 
     // Fetch user name for notifications
     const { data: userData } = await supabaseClient
@@ -151,6 +164,7 @@ serve(async (req) => {
     const officeLocation = getSetting('office_location') // { lat, lng }
     const allowedRadius = getSetting('allowed_radius_meters') // number
     const allowedWifiList = getSetting('wifi_allowlist') // string[]
+    const activeQrSecret = getSetting('active_qr_secret') // string
 
     // 3. Validate Location (Haversine Formula)
     const getDistanceFromLatLonInM = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -200,76 +214,141 @@ serve(async (req) => {
         }
     }
 
-    // 5. Validate Face (Euclidean Distance) - Compare against ALL stored embeddings
-    const { data: faceProfile, error: faceError } = await supabaseClient
-        .from('face_profiles')
-        .select('face_embedding, face_embeddings')
-        .eq('user_id', user_id)
-        .single()
-    
-    if (faceError || !faceProfile) {
-        log('ERROR', 'Face profile not found', { user_id })
-        return new Response(JSON.stringify({ success: false, error: 'NO_FACE_PROFILE', message: 'User verification profile not found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
-    }
+    let verificationMethod = 'face_id_secure';
 
-    // Use multi-pose embeddings if available, fallback to single embedding
-    const storedEmbeddings: number[][] = faceProfile.face_embeddings && faceProfile.face_embeddings.length > 0
-        ? faceProfile.face_embeddings 
-        : faceProfile.face_embedding 
-            ? [faceProfile.face_embedding]
-            : [];
-
-    if (storedEmbeddings.length === 0) {
-        log('ERROR', 'No stored embeddings found', { user_id })
-        return new Response(JSON.stringify({ success: false, error: 'NO_FACE_PROFILE', message: 'User verification profile not found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
-    }
-
-    // Validate dimensions match
-    if (storedEmbeddings[0].length !== face_embedding.length) {
-        log('ERROR', 'Embedding dimension mismatch', { stored: storedEmbeddings[0].length, provided: face_embedding.length })
-        return new Response(JSON.stringify({ success: false, error: 'EMBEDDING_MISMATCH', message: 'Face data format invalid.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
-    }
-
-    // Compare against ALL stored embeddings, use BEST match
-    let bestDistance = Infinity;
-    let bestPoseIndex = 0;
-
-    for (let poseIdx = 0; poseIdx < storedEmbeddings.length; poseIdx++) {
-        const storedEmb = storedEmbeddings[poseIdx];
-        let sum = 0;
-        for (let i = 0; i < storedEmb.length; i++) {
-            sum += Math.pow(storedEmb[i] - face_embedding[i], 2);
+    // 5. Verification Strategy: QR Code OR Face ID
+    if (qr_code) {
+        // --- QR CODE VERIFICATION ---
+        if (!activeQrSecret) {
+            log('ERROR', 'No active QR secret configured on server')
+            return new Response(JSON.stringify({ success: false, error: 'SERVER_CONFIG_ERROR', message: 'QR Code verification not configured.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 })
         }
-        const distance = Math.sqrt(sum);
+
+        if (qr_code !== activeQrSecret) {
+            log('WARN', 'Invalid QR Code scanned', { provided: qr_code })
+            return new Response(JSON.stringify({ success: false, error: 'INVALID_QR', message: 'Invalid QR Code.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+        }
         
-        if (distance < bestDistance) {
-            bestDistance = distance;
-            bestPoseIndex = poseIdx;
+        verificationMethod = 'qr_code';
+        log('INFO', 'QR Code verified successfully')
+
+    } else if (face_embedding) {
+        // --- FACE ID VERIFICATION ---
+        
+        const { data: faceProfile, error: faceError } = await supabaseClient
+            .from('face_profiles')
+            .select('face_embedding, face_embeddings')
+            .eq('user_id', user_id)
+            .single()
+        
+        if (faceError || !faceProfile) {
+            log('ERROR', 'Face profile not found', { user_id })
+            return new Response(JSON.stringify({ success: false, error: 'NO_FACE_PROFILE', message: 'User verification profile not found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
         }
-    }
 
-    // Threshold for match - slightly relaxed when using multi-pose (more chances to match)
-    const THRESHOLD = storedEmbeddings.length > 1 ? 0.85 : 0.8;
+        // Use multi-pose embeddings if available, fallback to single embedding
+        const storedEmbeddings: number[][] = faceProfile.face_embeddings && faceProfile.face_embeddings.length > 0
+            ? faceProfile.face_embeddings 
+            : faceProfile.face_embedding 
+                ? [faceProfile.face_embedding]
+                : [];
 
-    if (bestDistance > THRESHOLD) {
-        log('WARN', 'Face verification failed', { 
-            bestDistance: bestDistance.toFixed(3), 
-            threshold: THRESHOLD,
-            posesTested: storedEmbeddings.length 
+        if (storedEmbeddings.length === 0) {
+            log('ERROR', 'No stored embeddings found', { user_id })
+            return new Response(JSON.stringify({ success: false, error: 'NO_FACE_PROFILE', message: 'User verification profile not found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+        }
+
+        // Validate dimensions match
+        if (storedEmbeddings[0].length !== face_embedding.length) {
+            log('ERROR', 'Embedding dimension mismatch', { stored: storedEmbeddings[0].length, provided: face_embedding.length })
+            return new Response(JSON.stringify({ success: false, error: 'EMBEDDING_MISMATCH', message: 'Face data format invalid. Please re-enroll your face.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+        }
+
+        // Cosine similarity function - measures directional alignment of embeddings
+        const cosineSimilarity = (a: number[], b: number[]): number => {
+            let dot = 0, normA = 0, normB = 0;
+            for (let i = 0; i < a.length; i++) {
+                dot += a[i] * b[i];
+                normA += a[i] * a[i];
+                normB += b[i] * b[i];
+            }
+            if (normA === 0 || normB === 0) return 0;
+            return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        };
+
+        // Compare against ALL stored embeddings, use BEST match
+        let bestDistance = Infinity;
+        let bestSimilarity = -1;
+        let bestPoseIndex = 0;
+
+        for (let poseIdx = 0; poseIdx < storedEmbeddings.length; poseIdx++) {
+            const storedEmb = storedEmbeddings[poseIdx];
+            
+            // Euclidean distance
+            let sum = 0;
+            for (let i = 0; i < storedEmb.length; i++) {
+                sum += Math.pow(storedEmb[i] - face_embedding[i], 2);
+            }
+            const distance = Math.sqrt(sum);
+            
+            // Cosine similarity
+            const similarity = cosineSimilarity(storedEmb, face_embedding);
+            
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestSimilarity = similarity;
+                bestPoseIndex = poseIdx;
+            }
+        }
+
+        // STRICT thresholds - ML Kit embeddings are geometric, not identity-based
+        // Euclidean: Lower = more similar (0 = identical)
+        // Cosine: Higher = more similar (1 = identical direction)
+        const DISTANCE_THRESHOLD = storedEmbeddings.length > 1 ? 0.25 : 0.20;
+        const SIMILARITY_THRESHOLD = 0.92;
+
+        log('INFO', 'Face comparison result', {
+            bestDistance: bestDistance.toFixed(4),
+            bestSimilarity: bestSimilarity.toFixed(4),
+            distanceThreshold: DISTANCE_THRESHOLD,
+            similarityThreshold: SIMILARITY_THRESHOLD,
+            matchedPose: bestPoseIndex + 1,
+            totalPoses: storedEmbeddings.length
+        });
+
+        // DUAL CHECK: Must pass BOTH distance AND similarity thresholds
+        if (bestDistance > DISTANCE_THRESHOLD || bestSimilarity < SIMILARITY_THRESHOLD) {
+            log('WARN', 'Face verification FAILED', { 
+                bestDistance: bestDistance.toFixed(4), 
+                bestSimilarity: bestSimilarity.toFixed(4),
+                distanceOk: bestDistance <= DISTANCE_THRESHOLD,
+                similarityOk: bestSimilarity >= SIMILARITY_THRESHOLD,
+                posesTested: storedEmbeddings.length 
+            })
+            return new Response(JSON.stringify({ 
+                success: false, 
+                error: 'FACE_MISMATCH', 
+                message: `Face verification failed. Your face does not match the enrolled profile.`,
+                debug: {
+                    distance: bestDistance.toFixed(3),
+                    similarity: bestSimilarity.toFixed(3),
+                    distanceThreshold: DISTANCE_THRESHOLD,
+                    similarityThreshold: SIMILARITY_THRESHOLD
+                }
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+        }
+
+        log('INFO', 'Face verified successfully', { 
+            bestDistance: bestDistance.toFixed(4), 
+            bestSimilarity: bestSimilarity.toFixed(4),
+            matchedPose: bestPoseIndex + 1,
+            totalPoses: storedEmbeddings.length
         })
-        return new Response(JSON.stringify({ 
-            success: false, 
-            error: 'FACE_MISMATCH', 
-            message: `Face verification failed. (Diff: ${bestDistance.toFixed(2)} > ${THRESHOLD})` 
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
-    }
 
-    log('INFO', 'Face verified successfully', { 
-        bestDistance: bestDistance.toFixed(3), 
-        matchedPose: bestPoseIndex + 1,
-        totalPoses: storedEmbeddings.length,
-        threshold: THRESHOLD 
-    })
+    } else {
+        log('ERROR', 'No verification data provided')
+        return new Response(JSON.stringify({ success: false, error: 'MISSING_DATA', message: 'Face data or QR code required.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+    }
 
     // 6. Handle Check-In or Check-Out
     if (type === 'check_out') {
@@ -319,7 +398,8 @@ serve(async (req) => {
            total_minutes: Math.round(duration),
            time: checkOutTime.toISOString(),
            location: locationFlag,
-           wifi: wifiFlag
+           wifi: wifiFlag,
+           method: verificationMethod
         });
 
         log('INFO', 'Check-out successful', { user_id, total_minutes: Math.round(duration), locationFlag, wifiFlag })
@@ -340,7 +420,7 @@ serve(async (req) => {
                 status: 'present',
                 location_data: location,
                 wifi_ssid: wifi_info.ssid,
-                verification_method: 'face_id_secure'
+                verification_method: verificationMethod
             })
             .select()
             .single()
@@ -355,7 +435,8 @@ serve(async (req) => {
           user_id,
           time: new Date().toISOString(),
           location: location,
-          wifi: wifi_info.ssid
+          wifi: wifi_info.ssid,
+          method: verificationMethod
         });
 
         log('INFO', 'Check-in successful', { user_id })

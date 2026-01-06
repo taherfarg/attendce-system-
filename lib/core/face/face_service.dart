@@ -165,7 +165,8 @@ class FaceService {
   }
 
   /// Generate face embedding from face landmarks
-  /// This is a simplified embedding - for production, use TFLite with FaceNet/ArcFace
+  /// IMPROVED: Adds facial ratios and proportions that differ between individuals
+  /// Note: For production, use TFLite with FaceNet/ArcFace for true biometric verification
   List<double> generateEmbedding(Face face) {
     final landmarks = face.landmarks;
     final contours = face.contours;
@@ -186,6 +187,115 @@ class FaceService {
       embedding.add((y - centerY) / height);
     }
 
+    // Helper to calculate distance between two points
+    double distance(int x1, int y1, int x2, int y2) {
+      return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
+    }
+
+    // ===== IDENTITY-DISCRIMINATING FEATURES =====
+    // These ratios vary between individuals and are key for verification
+
+    // Get key landmarks for ratio calculations
+    final leftEye = landmarks[FaceLandmarkType.leftEye];
+    final rightEye = landmarks[FaceLandmarkType.rightEye];
+    final noseBase = landmarks[FaceLandmarkType.noseBase];
+    final leftMouth = landmarks[FaceLandmarkType.leftMouth];
+    final rightMouth = landmarks[FaceLandmarkType.rightMouth];
+    final bottomMouth = landmarks[FaceLandmarkType.bottomMouth];
+    final leftCheek = landmarks[FaceLandmarkType.leftCheek];
+    final rightCheek = landmarks[FaceLandmarkType.rightCheek];
+    final leftEar = landmarks[FaceLandmarkType.leftEar];
+
+    // 1. EYE SEPARATION RATIO (key discriminator)
+    if (leftEye != null && rightEye != null) {
+      final eyeDistance = distance(
+        leftEye.position.x,
+        leftEye.position.y,
+        rightEye.position.x,
+        rightEye.position.y,
+      );
+      embedding.add(eyeDistance / width); // Normalized eye separation
+
+      // Eye vertical alignment difference (asymmetry)
+      embedding.add((rightEye.position.y - leftEye.position.y) / height);
+    } else {
+      embedding.addAll([0.3, 0]); // Default values
+    }
+
+    // 2. NOSE-TO-MOUTH PROPORTION
+    if (noseBase != null && bottomMouth != null) {
+      final noseToMouth = distance(
+        noseBase.position.x,
+        noseBase.position.y,
+        bottomMouth.position.x,
+        bottomMouth.position.y,
+      );
+      embedding.add(noseToMouth / height);
+    } else {
+      embedding.add(0.15);
+    }
+
+    // 3. EYE-TO-NOSE RATIO
+    if (leftEye != null && rightEye != null && noseBase != null) {
+      final eyeCenterX = (leftEye.position.x + rightEye.position.x) / 2;
+      final eyeCenterY = (leftEye.position.y + rightEye.position.y) / 2;
+      final eyeToNose = distance(
+        eyeCenterX.round(),
+        eyeCenterY.round(),
+        noseBase.position.x,
+        noseBase.position.y,
+      );
+      embedding.add(eyeToNose / height);
+    } else {
+      embedding.add(0.2);
+    }
+
+    // 4. MOUTH WIDTH RATIO
+    if (leftMouth != null && rightMouth != null) {
+      final mouthWidth = distance(
+        leftMouth.position.x,
+        leftMouth.position.y,
+        rightMouth.position.x,
+        rightMouth.position.y,
+      );
+      embedding.add(mouthWidth / width);
+    } else {
+      embedding.add(0.25);
+    }
+
+    // 5. FACE ASYMMETRY (unique to each person)
+    if (leftCheek != null && rightCheek != null && noseBase != null) {
+      final leftDist = distance(
+        leftCheek.position.x,
+        leftCheek.position.y,
+        noseBase.position.x,
+        noseBase.position.y,
+      );
+      final rightDist = distance(
+        rightCheek.position.x,
+        rightCheek.position.y,
+        noseBase.position.x,
+        noseBase.position.y,
+      );
+      embedding.add((leftDist - rightDist) / width); // Asymmetry measure
+    } else {
+      embedding.add(0);
+    }
+
+    // 6. EAR-TO-EYE RATIOS (face shape indicator)
+    if (leftEar != null && leftEye != null) {
+      final earToEye = distance(
+        leftEar.position.x,
+        leftEar.position.y,
+        leftEye.position.x,
+        leftEye.position.y,
+      );
+      embedding.add(earToEye / width);
+    } else {
+      embedding.add(0.2);
+    }
+
+    // ===== ORIGINAL FEATURES (positions) =====
     // Add landmark positions (normalized)
     for (final type in FaceLandmarkType.values) {
       final landmark = landmarks[type];
@@ -197,28 +307,50 @@ class FaceService {
       }
     }
 
-    // Add face geometry (angles only, size is irrelevant for identity)
-    embedding.add(face.headEulerAngleX ?? 0);
-    embedding.add(face.headEulerAngleY ?? 0);
-    embedding.add(face.headEulerAngleZ ?? 0);
+    // Add face geometry (angles - these help with pose matching)
+    // Normalize angles to similar range as other features
+    embedding.add((face.headEulerAngleX ?? 0) / 45.0);
+    embedding.add((face.headEulerAngleY ?? 0) / 45.0);
+    embedding.add((face.headEulerAngleZ ?? 0) / 45.0);
 
-    // Add contour points (normalized)
-    // We only take a subset of points to keep embedding size manageable
-    for (final type in FaceContourType.values) {
-      final contour = contours[type];
-      if (contour != null && contour.points.isNotEmpty) {
-        // Add every 5th point to reduce dimensionality but capture shape
-        for (var i = 0; i < contour.points.length; i += 4) {
-          addNormalizedPoint(contour.points[i].x, contour.points[i].y);
-        }
-      } else {
-        // If contour is missing, add placeholders to maintain embedding size consistency
-        // The number of placeholders should match the expected number of points if present
-        // For simplicity, assuming 4 points (2 coordinates each) if a contour is missing
-        embedding.addAll(
-          [0, 0, 0, 0, 0, 0, 0, 0],
-        ); // Adjusted to match potential 4 points (every 5th point from original)
+    // Add contour-based features (shape)
+    // Focus on key contours that define face shape
+    final faceContour = contours[FaceContourType.face];
+    if (faceContour != null && faceContour.points.length >= 10) {
+      // Sample face contour at key positions for shape signature
+      final points = faceContour.points;
+      final step = points.length ~/ 8;
+      for (var i = 0; i < points.length; i += step) {
+        addNormalizedPoint(points[i].x, points[i].y);
       }
+    } else {
+      // Placeholder for face contour
+      for (var i = 0; i < 16; i++) {
+        embedding.add(0);
+      }
+    }
+
+    // Add eyebrow shape (unique identifier)
+    final leftEyebrowTop = contours[FaceContourType.leftEyebrowTop];
+    final rightEyebrowTop = contours[FaceContourType.rightEyebrowTop];
+    if (leftEyebrowTop != null && leftEyebrowTop.points.length >= 3) {
+      // Eyebrow curvature
+      final mid = leftEyebrowTop.points[leftEyebrowTop.points.length ~/ 2];
+      final start = leftEyebrowTop.points.first;
+      final end = leftEyebrowTop.points.last;
+      final curvature = (mid.y - (start.y + end.y) / 2) / height;
+      embedding.add(curvature);
+    } else {
+      embedding.add(0);
+    }
+    if (rightEyebrowTop != null && rightEyebrowTop.points.length >= 3) {
+      final mid = rightEyebrowTop.points[rightEyebrowTop.points.length ~/ 2];
+      final start = rightEyebrowTop.points.first;
+      final end = rightEyebrowTop.points.last;
+      final curvature = (mid.y - (start.y + end.y) / 2) / height;
+      embedding.add(curvature);
+    } else {
+      embedding.add(0);
     }
 
     // Normalize embedding to 128 dimensions
@@ -229,10 +361,14 @@ class FaceService {
       embedding = embedding.sublist(0, 128);
     }
 
-    // Normalize values
-    final maxVal = embedding.reduce((a, b) => a.abs() > b.abs() ? a : b).abs();
-    if (maxVal > 0) {
-      embedding = embedding.map((v) => v / maxVal).toList();
+    // L2 normalize the embedding (unit vector)
+    double norm = 0;
+    for (var v in embedding) {
+      norm += v * v;
+    }
+    norm = sqrt(norm);
+    if (norm > 0) {
+      embedding = embedding.map((v) => v / norm).toList();
     }
 
     return embedding;

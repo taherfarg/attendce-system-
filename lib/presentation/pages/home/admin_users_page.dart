@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'admin_user_history_page.dart';
 
 class AdminUsersPage extends StatefulWidget {
   const AdminUsersPage({super.key});
@@ -88,6 +89,17 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                         horizontal: 16,
                         vertical: 8,
                       ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AdminUserHistoryPage(
+                              userId: user['id'],
+                              userName: user['name'] ?? 'Unknown',
+                            ),
+                          ),
+                        );
+                      },
                       leading: CircleAvatar(
                         backgroundColor: isAndmin
                             ? scheme.primary

@@ -487,14 +487,18 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                               child: FittedBox(
                                 fit: BoxFit.cover,
                                 child: SizedBox(
-                                  width: _cameraController!
-                                      .value
-                                      .previewSize!
-                                      .height,
-                                  height: _cameraController!
-                                      .value
-                                      .previewSize!
-                                      .width,
+                                  width:
+                                      _cameraController!
+                                          .value
+                                          .previewSize
+                                          ?.height ??
+                                      300,
+                                  height:
+                                      _cameraController!
+                                          .value
+                                          .previewSize
+                                          ?.width ??
+                                      400,
                                   child: CameraPreview(_cameraController!),
                                 ),
                               ),

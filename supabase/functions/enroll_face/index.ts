@@ -45,22 +45,29 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
     }
 
+    // Extract JWT token from Authorization header
+    const token = authHeader.replace('Bearer ', '');
+    
+    if (!token || token === authHeader) {
+      log('WARN', 'Invalid Authorization header format')
+      return new Response(JSON.stringify({ error: 'Invalid Authorization header format. Expected: Bearer <token>' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
+    }
+
     // Create client with anon key for user auth verification
     const anonClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } }
     })
 
-    // Verify the user
-    const { data: { user }, error: userError } = await anonClient.auth.getUser()
+    // Verify the user using the extracted JWT
+    const { data: { user }, error: userError } = await anonClient.auth.getUser(token)
 
     if (userError || !user) {
       log('ERROR', 'Authentication failed', { error: userError?.message })
       return new Response(JSON.stringify({ 
-        error: 'Invalid or expired token',
+        error: `Authentication failed: ${userError?.message || 'Invalid or expired token'}`,
         details: {
             message: userError?.message,
-            authHeaderLen: authHeader.length,
-            authHeaderPrefix: authHeader.substring(0, 10) + '...'
+            tokenLen: token.length,
         }
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 })
     }
