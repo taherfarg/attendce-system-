@@ -13,13 +13,14 @@ const log = (level: 'INFO' | 'WARN' | 'ERROR', message: string, data?: object) =
   console.log(JSON.stringify({ timestamp: new Date().toISOString(), level, message, ...data }));
 }
 
-interface EnrollRequest {
-  user_id: string;
-  face_embedding: number[];
-}
-
 // Expected embedding size (should match ML Kit model output)
 const EXPECTED_EMBEDDING_SIZE = 128;
+
+interface EnrollRequest {
+  user_id: string;
+  face_embedding?: number[];        // Single embedding (backward compat)
+  face_embeddings?: number[][];     // Multi-pose embeddings array
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -67,31 +68,48 @@ serve(async (req) => {
     // Create service role client for DB operations (bypasses RLS)
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
 
-    const { user_id, face_embedding } = await req.json() as EnrollRequest
+    const { user_id, face_embedding, face_embeddings } = await req.json() as EnrollRequest
 
     if (user.id !== user_id) {
       log('WARN', 'User ID mismatch', { token_user: user.id, request_user: user_id })
       return new Response(JSON.stringify({ error: 'Unauthorized to enroll for another user' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 })
     }
 
-    // Validate embedding
-    if (!Array.isArray(face_embedding) || face_embedding.length === 0) {
+    // Handle multi-pose or single embedding
+    let embeddingsArray: number[][] = [];
+    let singleEmbedding: number[] | null = null;
+
+    if (face_embeddings && Array.isArray(face_embeddings) && face_embeddings.length > 0) {
+      // Multi-pose enrollment
+      embeddingsArray = face_embeddings;
+      singleEmbedding = face_embeddings[0]; // Use first for backward compat
+      log('INFO', 'Multi-pose enrollment', { user_id, pose_count: face_embeddings.length });
+    } else if (face_embedding && Array.isArray(face_embedding) && face_embedding.length > 0) {
+      // Single embedding (backward compatible)
+      singleEmbedding = face_embedding;
+      embeddingsArray = [face_embedding]; // Wrap in array
+      log('INFO', 'Single-pose enrollment', { user_id });
+    } else {
       log('ERROR', 'Invalid embedding format', { user_id })
       return new Response(JSON.stringify({ error: 'Invalid face embedding format' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
     }
 
-    if (face_embedding.length !== EXPECTED_EMBEDDING_SIZE) {
-      log('WARN', 'Embedding size mismatch', { expected: EXPECTED_EMBEDDING_SIZE, received: face_embedding.length })
+    // Validate embedding dimensions
+    for (const emb of embeddingsArray) {
+      if (emb.length !== EXPECTED_EMBEDDING_SIZE) {
+        log('WARN', 'Embedding size mismatch', { expected: EXPECTED_EMBEDDING_SIZE, received: emb.length })
+      }
     }
 
-    log('INFO', 'Enrolling face profile', { user_id, embedding_size: face_embedding.length })
+    log('INFO', 'Enrolling face profile', { user_id, embedding_count: embeddingsArray.length })
 
-    // Upsert Profile using admin client
+    // Upsert Profile using admin client - store both single and array for compatibility
     const { data, error } = await supabaseAdmin
         .from('face_profiles')
         .upsert({
             user_id: user_id,
-            face_embedding: face_embedding,
+            face_embedding: singleEmbedding,           // Single embedding (backward compat)
+            face_embeddings: embeddingsArray,          // Array of all poses
             updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' })
         .select()
@@ -101,8 +119,12 @@ serve(async (req) => {
       throw error
     }
 
-    log('INFO', 'Enrollment successful', { user_id })
-    return new Response(JSON.stringify({ success: true, message: 'Enrollment successful' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
+    log('INFO', 'Enrollment successful', { user_id, poses_stored: embeddingsArray.length })
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Enrollment successful', 
+      poses_stored: embeddingsArray.length 
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
 
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';

@@ -238,6 +238,26 @@ class FaceService {
     return embedding;
   }
 
+  /// Calculate embedding quality score (0.0 to 1.0)
+  /// Based on how many landmarks and contours were available
+  double calculateEmbeddingQuality(Face face) {
+    int availableLandmarks = 0;
+    int availableContours = 0;
+
+    for (final type in FaceLandmarkType.values) {
+      if (face.landmarks[type] != null) availableLandmarks++;
+    }
+    for (final type in FaceContourType.values) {
+      if (face.contours[type] != null) availableContours++;
+    }
+
+    final landmarkScore = availableLandmarks / FaceLandmarkType.values.length;
+    final contourScore = availableContours / FaceContourType.values.length;
+
+    // Weight: 40% landmarks, 60% contours (contours give better shape info)
+    return (landmarkScore * 0.4) + (contourScore * 0.6);
+  }
+
   /// Compare two embeddings using Euclidean distance
   double compareEmbeddings(List<double> embedding1, List<double> embedding2) {
     if (embedding1.length != embedding2.length) {
@@ -250,6 +270,84 @@ class FaceService {
     }
 
     return sqrt(sum);
+  }
+
+  /// Calculate cosine similarity between two embeddings (-1.0 to 1.0, higher is more similar)
+  double cosineSimilarity(List<double> embedding1, List<double> embedding2) {
+    if (embedding1.length != embedding2.length) {
+      throw FaceException('Embedding dimension mismatch');
+    }
+
+    double dotProduct = 0;
+    double norm1 = 0;
+    double norm2 = 0;
+
+    for (int i = 0; i < embedding1.length; i++) {
+      dotProduct += embedding1[i] * embedding2[i];
+      norm1 += embedding1[i] * embedding1[i];
+      norm2 += embedding2[i] * embedding2[i];
+    }
+
+    if (norm1 == 0 || norm2 == 0) return 0;
+    return dotProduct / (sqrt(norm1) * sqrt(norm2));
+  }
+
+  /// Average multiple embeddings into one (for verification stability)
+  List<double> averageEmbeddings(List<List<double>> embeddings) {
+    if (embeddings.isEmpty) {
+      throw FaceException('No embeddings to average');
+    }
+    if (embeddings.length == 1) return embeddings.first;
+
+    final length = embeddings.first.length;
+    final averaged = List<double>.filled(length, 0);
+
+    for (final emb in embeddings) {
+      for (int i = 0; i < length; i++) {
+        averaged[i] += emb[i];
+      }
+    }
+
+    for (int i = 0; i < length; i++) {
+      averaged[i] /= embeddings.length;
+    }
+
+    return averaged;
+  }
+
+  /// Compare embedding against multiple stored embeddings
+  /// Returns the best (lowest) distance found
+  FaceMatchResult compareAgainstAll(
+    List<double> incoming,
+    List<List<double>> storedEmbeddings, {
+    double threshold = 0.8,
+  }) {
+    if (storedEmbeddings.isEmpty) {
+      throw FaceException('No stored embeddings to compare against');
+    }
+
+    double bestDistance = double.infinity;
+    double bestCosine = -1;
+    int bestIndex = 0;
+
+    for (int i = 0; i < storedEmbeddings.length; i++) {
+      final distance = compareEmbeddings(incoming, storedEmbeddings[i]);
+      final cosine = cosineSimilarity(incoming, storedEmbeddings[i]);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestCosine = cosine;
+        bestIndex = i;
+      }
+    }
+
+    return FaceMatchResult(
+      isMatch: bestDistance < threshold,
+      bestDistance: bestDistance,
+      bestCosine: bestCosine,
+      matchedIndex: bestIndex,
+      totalCompared: storedEmbeddings.length,
+    );
   }
 
   /// Check if two embeddings match (distance below threshold)
@@ -314,4 +412,21 @@ class FaceException implements Exception {
 
   @override
   String toString() => 'FaceException: $message';
+}
+
+/// Result of comparing against multiple stored embeddings
+class FaceMatchResult {
+  final bool isMatch;
+  final double bestDistance;
+  final double bestCosine;
+  final int matchedIndex;
+  final int totalCompared;
+
+  FaceMatchResult({
+    required this.isMatch,
+    required this.bestDistance,
+    required this.bestCosine,
+    required this.matchedIndex,
+    required this.totalCompared,
+  });
 }

@@ -200,10 +200,10 @@ serve(async (req) => {
         }
     }
 
-    // 5. Validate Face (Euclidean Distance)
+    // 5. Validate Face (Euclidean Distance) - Compare against ALL stored embeddings
     const { data: faceProfile, error: faceError } = await supabaseClient
         .from('face_profiles')
-        .select('face_embedding')
+        .select('face_embedding, face_embeddings')
         .eq('user_id', user_id)
         .single()
     
@@ -212,32 +212,64 @@ serve(async (req) => {
         return new Response(JSON.stringify({ success: false, error: 'NO_FACE_PROFILE', message: 'User verification profile not found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
     }
 
-    const storedEmbedding = faceProfile.face_embedding
-    if (storedEmbedding.length !== face_embedding.length) {
-         log('ERROR', 'Embedding dimension mismatch', { stored: storedEmbedding.length, provided: face_embedding.length })
-         return new Response(JSON.stringify({ success: false, error: 'EMBEDDING_MISMATCH', message: 'Face data format invalid.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+    // Use multi-pose embeddings if available, fallback to single embedding
+    const storedEmbeddings: number[][] = faceProfile.face_embeddings && faceProfile.face_embeddings.length > 0
+        ? faceProfile.face_embeddings 
+        : faceProfile.face_embedding 
+            ? [faceProfile.face_embedding]
+            : [];
+
+    if (storedEmbeddings.length === 0) {
+        log('ERROR', 'No stored embeddings found', { user_id })
+        return new Response(JSON.stringify({ success: false, error: 'NO_FACE_PROFILE', message: 'User verification profile not found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
     }
 
-    // Calculate Euclidean Distance
-    let sum = 0;
-    for (let i = 0; i < storedEmbedding.length; i++) {
-        sum += Math.pow(storedEmbedding[i] - face_embedding[i], 2);
+    // Validate dimensions match
+    if (storedEmbeddings[0].length !== face_embedding.length) {
+        log('ERROR', 'Embedding dimension mismatch', { stored: storedEmbeddings[0].length, provided: face_embedding.length })
+        return new Response(JSON.stringify({ success: false, error: 'EMBEDDING_MISMATCH', message: 'Face data format invalid.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
     }
-    const distance = Math.sqrt(sum);
-    // Landmark-based normalized embeddings
-    // Relaxing threshold to 0.8 to reduce false rejections
-    const THRESHOLD = 0.8;
 
-    if (distance > THRESHOLD) {
-         log('WARN', 'Face verification failed', { distance: distance.toFixed(3), threshold: THRESHOLD })
-         return new Response(JSON.stringify({ 
+    // Compare against ALL stored embeddings, use BEST match
+    let bestDistance = Infinity;
+    let bestPoseIndex = 0;
+
+    for (let poseIdx = 0; poseIdx < storedEmbeddings.length; poseIdx++) {
+        const storedEmb = storedEmbeddings[poseIdx];
+        let sum = 0;
+        for (let i = 0; i < storedEmb.length; i++) {
+            sum += Math.pow(storedEmb[i] - face_embedding[i], 2);
+        }
+        const distance = Math.sqrt(sum);
+        
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestPoseIndex = poseIdx;
+        }
+    }
+
+    // Threshold for match - slightly relaxed when using multi-pose (more chances to match)
+    const THRESHOLD = storedEmbeddings.length > 1 ? 0.85 : 0.8;
+
+    if (bestDistance > THRESHOLD) {
+        log('WARN', 'Face verification failed', { 
+            bestDistance: bestDistance.toFixed(3), 
+            threshold: THRESHOLD,
+            posesTested: storedEmbeddings.length 
+        })
+        return new Response(JSON.stringify({ 
             success: false, 
             error: 'FACE_MISMATCH', 
-            message: `Face verification failed. (Diff: ${distance.toFixed(2)} > ${THRESHOLD})` 
-         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+            message: `Face verification failed. (Diff: ${bestDistance.toFixed(2)} > ${THRESHOLD})` 
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
     }
 
-    log('INFO', 'Face verified successfully', { distance, threshold: THRESHOLD })
+    log('INFO', 'Face verified successfully', { 
+        bestDistance: bestDistance.toFixed(3), 
+        matchedPose: bestPoseIndex + 1,
+        totalPoses: storedEmbeddings.length,
+        threshold: THRESHOLD 
+    })
 
     // 6. Handle Check-In or Check-Out
     if (type === 'check_out') {

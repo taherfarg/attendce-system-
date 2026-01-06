@@ -1,20 +1,26 @@
 import 'dart:io';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../permissions/permission_service.dart';
 
 /// Service for handling WiFi network information
 class WifiService {
   final NetworkInfo _networkInfo = NetworkInfo();
+  final PermissionService _permissionService = PermissionService();
 
   /// Check and request necessary permissions for WiFi info
   Future<bool> checkAndRequestPermission() async {
     if (Platform.isAndroid) {
       // Android requires location permission to access WiFi SSID
-      final status = await Permission.location.request();
+      final status = await _permissionService.requestPermission(
+        Permission.location,
+      );
       return status.isGranted;
     } else if (Platform.isIOS) {
       // iOS requires location permission for WiFi info
-      final status = await Permission.locationWhenInUse.request();
+      final status = await _permissionService.requestPermission(
+        Permission.locationWhenInUse,
+      );
       return status.isGranted;
     }
     return true;

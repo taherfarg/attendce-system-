@@ -9,6 +9,7 @@ import '../../../core/face/face_service.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/wifi/wifi_service.dart';
 import '../../../core/services/offline_queue.dart';
+import '../../../core/permissions/permission_service.dart';
 import '../../../data/repositories/attendance_repository.dart';
 
 /// Modern face scan page with properly centered camera
@@ -41,6 +42,14 @@ class _FaceScanPageState extends State<FaceScanPage>
   bool _faceReady = false;
   List<double>? _currentEmbedding;
 
+  // Collect multiple embeddings for averaging (more stable verification)
+  List<List<double>> _collectedEmbeddings = [];
+  static const _requiredEmbeddingCount = 3;
+
+  // Throttle frame processing to prevent lag
+  DateTime _lastProcessedTime = DateTime.now();
+  static const _processInterval = Duration(milliseconds: 300);
+
   Map<String, double>? _locationData;
   Map<String, dynamic>? _wifiData;
 
@@ -59,7 +68,12 @@ class _FaceScanPageState extends State<FaceScanPage>
 
   Future<void> _initializeCamera() async {
     try {
-      final status = await Permission.camera.request();
+      // Use centralized permission service to prevent race conditions
+      final permissionService = PermissionService();
+      final status = await permissionService.requestPermission(
+        Permission.camera,
+      );
+
       if (status.isDenied || status.isPermanentlyDenied) {
         if (mounted) {
           setState(() {
@@ -82,7 +96,7 @@ class _FaceScanPageState extends State<FaceScanPage>
 
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.high, // Higher resolution for better detection
+        ResolutionPreset.low, // Use low resolution to prevent lag
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.nv21,
       );
@@ -134,7 +148,30 @@ class _FaceScanPageState extends State<FaceScanPage>
 
   Future<void> _processImage(CameraImage image) async {
     if (_isProcessing || _isVerifying) return;
+
+    // Throttle: skip frames that come too quickly
+    final now = DateTime.now();
+    if (now.difference(_lastProcessedTime) < _processInterval) {
+      return;
+    }
+    _lastProcessedTime = now;
+
     _isProcessing = true;
+
+    // Validate image planes are accessible
+    if (image.planes.isEmpty) {
+      _isProcessing = false;
+      return;
+    }
+
+    // Check if buffer is accessible (avoid the "buffer is inaccessible" error)
+    try {
+      final _ = image.planes.first.bytes;
+    } catch (e) {
+      // Buffer is not accessible, skip this frame
+      _isProcessing = false;
+      return;
+    }
 
     try {
       final inputImage = _faceService.convertCameraImageToInputImage(
@@ -155,6 +192,7 @@ class _FaceScanPageState extends State<FaceScanPage>
           setState(() {
             _detectedFace = null;
             _faceReady = false;
+            _collectedEmbeddings.clear(); // Reset when face lost
             _statusMessage = 'Looking for face...';
             _instruction = 'Position your face in the frame';
           });
@@ -164,6 +202,7 @@ class _FaceScanPageState extends State<FaceScanPage>
           setState(() {
             _statusMessage = 'One face only';
             _faceReady = false;
+            _collectedEmbeddings.clear(); // Reset when multiple faces
           });
         }
       } else {
@@ -187,9 +226,35 @@ class _FaceScanPageState extends State<FaceScanPage>
               _statusMessage = 'Look at the camera';
               _instruction = 'Keep eyes open naturally';
             } else {
-              _statusMessage = 'Face detected!';
-              _instruction = 'Ready to verify';
-              _currentEmbedding = _faceService.generateEmbedding(face);
+              // Generate embedding and collect for averaging
+              final embedding = _faceService.generateEmbedding(face);
+              final quality = _faceService.calculateEmbeddingQuality(face);
+
+              // Only accept high-quality embeddings
+              if (quality > 0.6) {
+                _collectedEmbeddings.add(embedding);
+
+                // Keep only the most recent embeddings
+                if (_collectedEmbeddings.length > _requiredEmbeddingCount) {
+                  _collectedEmbeddings.removeAt(0);
+                }
+
+                if (_collectedEmbeddings.length >= _requiredEmbeddingCount) {
+                  // Average embeddings for stable verification
+                  _currentEmbedding = _faceService.averageEmbeddings(
+                    _collectedEmbeddings,
+                  );
+                  _statusMessage = 'Face detected!';
+                  _instruction = 'Ready to verify';
+                } else {
+                  _statusMessage = 'Analyzing face...';
+                  _instruction =
+                      'Hold still (${_collectedEmbeddings.length}/$_requiredEmbeddingCount)';
+                }
+              } else {
+                _statusMessage = 'Improve lighting';
+                _instruction = 'Move to better lit area';
+              }
             }
           });
         }
@@ -688,115 +753,214 @@ class _FaceScanPageState extends State<FaceScanPage>
                   ),
                 ),
 
-                // Bottom panel
+                // Bottom panel with premium glassmorphism
                 Container(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.white.withOpacity(0.95), Colors.white],
+                    ),
                     borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(32),
+                      top: Radius.circular(36),
                     ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.15),
-                        blurRadius: 20,
-                        offset: const Offset(0, -5),
+                        blurRadius: 30,
+                        offset: const Offset(0, -10),
                       ),
                     ],
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Context indicators
+                      // Enhanced context indicators
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              accentColor.withOpacity(0.08),
+                              accentColor.withOpacity(0.04),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: accentColor.withOpacity(0.15),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildStatusIndicator(
+                              Icons.location_on_rounded,
+                              'GPS',
+                              _locationData != null,
+                              accentColor,
+                            ),
+                            Container(
+                              width: 1,
+                              height: 30,
+                              color: Colors.grey.shade200,
+                            ),
+                            _buildStatusIndicator(
+                              Icons.wifi_rounded,
+                              'WiFi',
+                              _wifiData != null,
+                              accentColor,
+                            ),
+                            Container(
+                              width: 1,
+                              height: 30,
+                              color: Colors.grey.shade200,
+                            ),
+                            _buildStatusIndicator(
+                              Icons.face_retouching_natural,
+                              'Face',
+                              _faceReady,
+                              accentColor,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Instruction with icon
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _ContextChip(
-                            icon: Icons.location_on_rounded,
-                            label: 'GPS',
-                            isReady: _locationData != null,
+                          Icon(
+                            _faceReady
+                                ? Icons.check_circle_rounded
+                                : Icons.info_outlined,
+                            size: 18,
+                            color: _faceReady
+                                ? const Color(0xFF10B981)
+                                : Colors.grey.shade500,
                           ),
-                          _ContextChip(
-                            icon: Icons.wifi_rounded,
-                            label: 'WiFi',
-                            isReady: _wifiData != null,
-                          ),
-                          _ContextChip(
-                            icon: Icons.face_retouching_natural,
-                            label: 'Face',
-                            isReady: _faceReady,
+                          const SizedBox(width: 8),
+                          Text(
+                            _instruction,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: _faceReady
+                                  ? const Color(0xFF10B981)
+                                  : Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
-                      // Instruction
-                      Text(
-                        _instruction,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Action button
-                      SizedBox(
+                      // Gradient action button
+                      Container(
                         width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton(
-                          onPressed: _faceReady && !_isVerifying
-                              ? _verifyAndSubmit
-                              : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accentColor,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey.shade200,
-                            disabledForegroundColor: Colors.grey.shade400,
-                            elevation: _faceReady ? 8 : 0,
-                            shadowColor: accentColor.withOpacity(0.4),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: _isVerifying
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white.withOpacity(0.8),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    const Text('Verifying...'),
-                                  ],
+                        height: 60,
+                        decoration: BoxDecoration(
+                          gradient: _faceReady && !_isVerifying
+                              ? LinearGradient(
+                                  colors: isCheckIn
+                                      ? [
+                                          const Color(0xFF10B981),
+                                          const Color(0xFF059669),
+                                        ]
+                                      : [
+                                          const Color(0xFFF59E0B),
+                                          const Color(0xFFD97706),
+                                        ],
                                 )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      isCheckIn
-                                          ? Icons.login_rounded
-                                          : Icons.logout_rounded,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      isCheckIn
-                                          ? 'Confirm Check In'
-                                          : 'Confirm Check Out',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                              : LinearGradient(
+                                  colors: [
+                                    Colors.grey.shade300,
+                                    Colors.grey.shade200,
                                   ],
                                 ),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: _faceReady
+                              ? [
+                                  BoxShadow(
+                                    color:
+                                        (isCheckIn
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFFF59E0B))
+                                            .withOpacity(0.4),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _faceReady && !_isVerifying
+                                ? _verifyAndSubmit
+                                : null,
+                            borderRadius: BorderRadius.circular(18),
+                            child: Center(
+                              child: _isVerifying
+                                  ? Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.5,
+                                            color: Colors.white.withOpacity(
+                                              0.9,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const Text(
+                                          'Verifying...',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          isCheckIn
+                                              ? Icons.login_rounded
+                                              : Icons.logout_rounded,
+                                          color: _faceReady
+                                              ? Colors.white
+                                              : Colors.grey.shade500,
+                                          size: 24,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          isCheckIn
+                                              ? 'Confirm Check In'
+                                              : 'Confirm Check Out',
+                                          style: TextStyle(
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.w700,
+                                            color: _faceReady
+                                                ? Colors.white
+                                                : Colors.grey.shade500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -804,6 +968,47 @@ class _FaceScanPageState extends State<FaceScanPage>
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _buildStatusIndicator(
+    IconData icon,
+    String label,
+    bool isReady,
+    Color accentColor,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            gradient: isReady
+                ? const LinearGradient(
+                    colors: [Color(0xFF10B981), Color(0xFF059669)],
+                  )
+                : null,
+            color: isReady ? null : Colors.grey.shade200,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isReady ? Icons.check_rounded : icon,
+            color: isReady ? Colors.white : Colors.grey.shade400,
+            size: 20,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isReady ? const Color(0xFF10B981) : Colors.grey.shade500,
+          ),
+        ),
+      ],
     );
   }
 
