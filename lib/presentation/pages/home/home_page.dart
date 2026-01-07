@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -200,11 +201,25 @@ class _HomePageState extends State<HomePage> {
       final officeLat = _systemSettings['office_location']?['lat'];
       final officeLng = _systemSettings['office_location']?['lng'];
       final allowedRadius = _systemSettings['allowed_radius_meters'] ?? 100;
-      final wifiAllowList =
-          (_systemSettings['wifi_allowlist'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          [];
+
+      // Parse wifi_allowlist (could be stored as String or List)
+      List<String> wifiAllowList = [];
+      final wifiValue = _systemSettings['wifi_allowlist'];
+      if (wifiValue != null) {
+        if (wifiValue is String) {
+          // Parse JSON string to list
+          try {
+            final parsed = jsonDecode(wifiValue);
+            if (parsed is List) {
+              wifiAllowList = parsed.map((e) => e.toString()).toList();
+            }
+          } catch (e) {
+            debugPrint('Failed to parse wifi_allowlist: $e');
+          }
+        } else if (wifiValue is List) {
+          wifiAllowList = wifiValue.map((e) => e.toString()).toList();
+        }
+      }
 
       // Location Check
       if (officeLat != null && officeLng != null) {
