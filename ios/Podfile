@@ -1,0 +1,25 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '15.5'
+
+# CocoaPods analytics ensures that we can measure the usage of specific pods.
+# source 'https://github.com/CocoaPods/Specs.git'
+
+# Glue to the Flutter module
+require File.expand_path(File.join('..', 'Flutter', 'podhelper'), __FILE__)
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+  end
+end
