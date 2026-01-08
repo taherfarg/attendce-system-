@@ -1,10 +1,13 @@
 platform :ios, '15.5'
 
-# CocoaPods analytics ensures that we can measure the usage of specific pods.
-source 'https://github.com/CocoaPods/Specs.git'
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
-# Glue to the Flutter module
-install! 'cocoapods', :disable_input_output_paths => true
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
 
 def flutter_root
   generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
@@ -16,18 +19,19 @@ def flutter_root
     matches = line.match(/FLUTTER_ROOT\=(.*)/)
     return matches[1].strip if matches
   end
-  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig and running flutter pub get"
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
 end
 
-require File.expand_path(File.join('..', 'Flutter', 'flutter_export_environment.sh'), __FILE__)
-load File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper.rb')
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
 
 target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-
+  
   target 'RunnerTests' do
     inherit! :search_paths
   end
