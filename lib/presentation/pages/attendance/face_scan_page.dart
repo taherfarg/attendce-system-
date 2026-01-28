@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import '../../../core/face/face_imports.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../core/face/face_service.dart';
@@ -589,15 +589,12 @@ class _FaceScanPageState extends State<FaceScanPage>
                           child: FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(
-                              width:
-                                  _cameraController!
-                                      .value
-                                      .previewSize
-                                      ?.height ??
+                              width: _cameraController!
+                                      .value.previewSize?.height ??
                                   screenSize.width,
                               height:
                                   _cameraController!.value.previewSize?.width ??
-                                  screenSize.height,
+                                      screenSize.height,
                               child: CameraPreview(_cameraController!),
                             ),
                           ),
@@ -908,11 +905,10 @@ class _FaceScanPageState extends State<FaceScanPage>
                           boxShadow: _faceReady
                               ? [
                                   BoxShadow(
-                                    color:
-                                        (isCheckIn
-                                                ? const Color(0xFF10B981)
-                                                : const Color(0xFFF59E0B))
-                                            .withOpacity(0.4),
+                                    color: (isCheckIn
+                                            ? const Color(0xFF10B981)
+                                            : const Color(0xFFF59E0B))
+                                        .withOpacity(0.4),
                                     blurRadius: 16,
                                     offset: const Offset(0, 6),
                                   ),

@@ -29,6 +29,8 @@ class _AdminUserHistoryPageState extends State<AdminUserHistoryPage> {
   int _daysPresent = 0;
   int _lates = 0;
 
+  String? _errorMessage;
+
   @override
   void initState() {
     super.initState();
@@ -36,7 +38,16 @@ class _AdminUserHistoryPageState extends State<AdminUserHistoryPage> {
   }
 
   Future<void> _loadHistory() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
+      if (widget.userId.isEmpty) {
+        throw Exception('Invalid User ID');
+      }
+
       final response = await _client
           .from('attendance')
           .select('*')
@@ -70,7 +81,12 @@ class _AdminUserHistoryPageState extends State<AdminUserHistoryPage> {
       }
     } catch (e) {
       debugPrint('Error loading user history: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.toString();
+        });
+      }
     }
   }
 
@@ -113,85 +129,114 @@ class _AdminUserHistoryPageState extends State<AdminUserHistoryPage> {
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
-          : CustomScrollView(
-              slivers: [
-                // Summary Cards
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Total Hours',
-                            value: '$_totalHours',
-                            icon: Icons.timer_outlined,
-                            color: Colors.blue,
-                          ),
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, color: scheme.error, size: 48),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Failed to load history',
+                        style: TextStyle(fontSize: 18, color: scheme.onSurface),
+                      ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: scheme.error),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Days Present',
-                            value: '$_daysPresent',
-                            icon: Icons.calendar_today_rounded,
-                            color: Colors.teal,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Late',
-                            value: '$_lates',
-                            icon: Icons.access_time_filled_rounded,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ],
-                    ).animate().fade().slideY(begin: 0.1),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: _loadHistory,
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-                ),
-
-                // History List
-                if (_history.isEmpty)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.history_toggle_off_rounded,
-                            size: 64,
-                            color: Colors.grey.shade300,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No attendance records',
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+                )
+              : CustomScrollView(
+                  slivers: [
+                    // Summary Cards
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _StatCard(
+                                label: 'Total Hours',
+                                value: '$_totalHours',
+                                icon: Icons.timer_outlined,
+                                color: Colors.blue,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _StatCard(
+                                label: 'Days Present',
+                                value: '$_daysPresent',
+                                icon: Icons.calendar_today_rounded,
+                                color: Colors.teal,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _StatCard(
+                                label: 'Late',
+                                value: '$_lates',
+                                icon: Icons.access_time_filled_rounded,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ).animate().fade().slideY(begin: 0.1),
                       ),
                     ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final item = _history[index];
-                        return _HistoryCard(item: item)
-                            .animate()
-                            .fade(delay: (50 * index).ms)
-                            .slideX(begin: 0.05);
-                      }, childCount: _history.length),
-                    ),
-                  ),
-              ],
-            ),
+
+                    // History List
+                    if (_history.isEmpty)
+                      SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.history_toggle_off_rounded,
+                                size: 64,
+                                color: Colors.grey.shade300,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No attendance records',
+                                style: TextStyle(
+                                  color: Colors.grey.shade500,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                        sliver: SliverList(
+                          delegate:
+                              SliverChildBuilderDelegate((context, index) {
+                            final item = _history[index];
+                            return _HistoryCard(item: item)
+                                .animate()
+                                .fade(delay: (50 * index).ms)
+                                .slideX(begin: 0.05);
+                          }, childCount: _history.length),
+                        ),
+                      ),
+                  ],
+                ),
     );
   }
 }
@@ -373,9 +418,9 @@ class _HistoryCard extends StatelessWidget {
                     icon: Icons.fingerprint,
                     label: 'Method',
                     value: item.verificationMethod.toUpperCase().replaceAll(
-                      '_',
-                      ' ',
-                    ),
+                          '_',
+                          ' ',
+                        ),
                   ),
                   const SizedBox(height: 12),
                   if (item.wifiSsid != null) ...[

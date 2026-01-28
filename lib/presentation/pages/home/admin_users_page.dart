@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../widgets/admin_web_scaffold.dart';
 import 'admin_user_history_page.dart';
 
 class AdminUsersPage extends StatefulWidget {
@@ -38,30 +39,22 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
-    return Scaffold(
-      backgroundColor: scheme.background,
-      appBar: AppBar(
-        title: Text(
-          'Users',
-          style: textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: scheme.onSurface,
-          ),
+    return AdminWebScaffold(
+      title: 'Users',
+      currentRoute: 'users',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.add),
+          onPressed: () {
+            // TODO: Add new user
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Add User functionality coming soon')),
+            );
+          },
         ),
-        backgroundColor: scheme.surface,
-        foregroundColor: scheme.onSurface,
-        elevation: 0,
-        centerTitle: true,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            color: scheme.outlineVariant.withOpacity(0.2),
-            height: 1,
-          ),
-        ),
-      ),
+      ],
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
           : RefreshIndicator(
@@ -94,16 +87,15 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                           context,
                           MaterialPageRoute(
                             builder: (_) => AdminUserHistoryPage(
-                              userId: user['id'],
+                              userId: user['id']?.toString() ?? '',
                               userName: user['name'] ?? 'Unknown',
                             ),
                           ),
                         );
                       },
                       leading: CircleAvatar(
-                        backgroundColor: isAndmin
-                            ? scheme.primary
-                            : scheme.secondary,
+                        backgroundColor:
+                            isAndmin ? scheme.primary : scheme.secondary,
                         foregroundColor: scheme.onPrimary,
                         child: Text(
                           (user['name'] ?? 'U')[0].toUpperCase(),

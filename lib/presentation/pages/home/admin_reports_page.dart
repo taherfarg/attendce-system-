@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../widgets/admin_web_scaffold.dart';
 import '../../../core/utils/time_utils.dart';
 import '../../../data/models/attendance_model.dart';
 
@@ -38,8 +39,8 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: const Color(0xFF6366F1),
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF6366F1),
               onPrimary: Colors.white,
               onSurface: Colors.black,
             ),
@@ -172,36 +173,17 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     final scheme = Theme.of(context).colorScheme;
     final dateStr = DateFormat('MMMM d, y').format(_selectedDate);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Text(
-          'Detailed Reports',
-          style: TextStyle(
-            color: Color(0xFF1E293B),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
+    return AdminWebScaffold(
+      title: 'Detailed Reports',
+      currentRoute: 'reports',
+      actions: [
+        IconButton(
+          onPressed: _exportCsv,
+          icon: const Icon(Icons.download_rounded),
+          color: scheme.primary,
+          tooltip: 'Export CSV',
         ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          color: const Color(0xFF1E293B),
-          iconSize: 20,
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _exportCsv,
-            icon: const Icon(Icons.download_rounded),
-            color: scheme.primary,
-            tooltip: 'Export CSV',
-          ),
-        ],
-      ),
+      ],
       body: Column(
         children: [
           // Filter Bar

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../../core/auth/auth_service.dart';
+import '../../widgets/admin_web_scaffold.dart';
 import 'admin_users_page.dart';
 import 'admin_reports_page.dart';
 import 'admin_settings_page.dart';
@@ -126,77 +127,71 @@ class _AdminHomePageState extends State<AdminHomePage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isWide = MediaQuery.of(context).size.width > 900;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _loadDashboardData,
-          color: scheme.primary,
+    return AdminWebScaffold(
+      title: 'Dashboard',
+      currentRoute: 'dashboard',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AdminNotificationsPage(),
+            ),
+          ),
+          tooltip: 'Notifications',
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded),
+          onPressed: _loadDashboardData,
+          tooltip: 'Refresh Data',
+        ),
+      ],
+      body: RefreshIndicator(
+        onRefresh: _loadDashboardData,
+        color: scheme.primary,
+        child: Padding(
+          padding: EdgeInsets.all(isWide ? 32 : 0),
           child: CustomScrollView(
             slivers: [
-              // Header
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _dateFormat.format(TimeUtils.nowDubai()),
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Admin Dashboard',
-                              style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1E293B),
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      _IconBtn(
-                        icon: Icons.notifications_outlined,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AdminNotificationsPage(),
+              // Mobile Header (Hidden on Web)
+              if (!isWide)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _dateFormat.format(TimeUtils.nowDubai()),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      _IconBtn(
-                        icon: Icons.refresh_rounded,
-                        onTap: _loadDashboardData,
-                        isError: _errorMessage != null,
-                      ),
-                      const SizedBox(width: 8),
-                      _IconBtn(
-                        icon: Icons.logout_rounded,
-                        onTap: () => _authService.signOut(),
-                        isLogout: true,
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Admin Dashboard',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1E293B),
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
               // Error Banner
               if (_errorMessage != null)
                 SliverToBoxAdapter(
                   child: Container(
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 20,
+                    margin: EdgeInsets.symmetric(
+                      horizontal: isWide ? 0 : 20,
                       vertical: 8,
                     ),
                     padding: const EdgeInsets.all(12),
@@ -223,131 +218,173 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   ),
                 ),
 
-              // Stats Row + Attendance Rate
+              const SliverToBoxAdapter(child: SizedBox(height: 20)),
+
+              // STATS AREA
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: EdgeInsets.symmetric(horizontal: isWide ? 0 : 20),
                   child: _isLoading
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(40),
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Attendance Rate Circle
-                            _AttendanceRateCard(
-                              rate: _attendanceRate,
-                              checkedIn: _todayCheckIns,
-                              total: _totalEmployees,
+                      ? const Center(child: CircularProgressIndicator())
+                      : isWide
+                          // WEB: Grid Layout for Stats
+                          ? Row(
+                              children: [
+                                _AttendanceRateCard(
+                                  rate: _attendanceRate,
+                                  checkedIn: _todayCheckIns,
+                                  total: _totalEmployees,
+                                ),
+                                const SizedBox(width: 24),
+                                Expanded(
+                                  child: GridView.count(
+                                    crossAxisCount: 3,
+                                    shrinkWrap: true,
+                                    mainAxisSpacing: 16,
+                                    crossAxisSpacing: 16,
+                                    childAspectRatio: 1.8,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    children: [
+                                      _MiniStatCard(
+                                        icon: Icons.people_rounded,
+                                        value: _totalEmployees.toString(),
+                                        label: 'Total Employees',
+                                        color: scheme.primary,
+                                      ),
+                                      _MiniStatCard(
+                                        icon: Icons.circle,
+                                        value: _activeNow.toString(),
+                                        label: 'Currently Active',
+                                        color: const Color(0xFF22C55E),
+                                      ),
+                                      _MiniStatCard(
+                                        icon: Icons.schedule_rounded,
+                                        value: '${_totalHoursToday ~/ 60}h',
+                                        label: 'Total Hours Today',
+                                        color: scheme.secondary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          // MOBILE: Column/Row hybrid
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _AttendanceRateCard(
+                                  rate: _attendanceRate,
+                                  checkedIn: _todayCheckIns,
+                                  total: _totalEmployees,
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      _MiniStatCard(
+                                        icon: Icons.people_rounded,
+                                        value: _totalEmployees.toString(),
+                                        label: 'Total Employees',
+                                        color: scheme.primary,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _MiniStatCard(
+                                        icon: Icons.circle,
+                                        value: _activeNow.toString(),
+                                        label: 'Currently Active',
+                                        color: const Color(0xFF22C55E),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _MiniStatCard(
+                                        icon: Icons.schedule_rounded,
+                                        value: '${_totalHoursToday ~/ 60}h',
+                                        label: 'Total Hours Today',
+                                        color: scheme.secondary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 16),
-                            // Stats Column
+                ),
+              ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+
+              // Actions (Hidden on Web as we have Sidebar)
+              if (!isWide)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Quick Actions',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
                             Expanded(
-                              child: Column(
-                                children: [
-                                  _MiniStatCard(
-                                    icon: Icons.people_rounded,
-                                    value: _totalEmployees.toString(),
-                                    label: 'Total Employees',
-                                    color: scheme.primary,
+                              child: _QuickActionCard(
+                                icon: Icons.people_outline_rounded,
+                                label: 'Users',
+                                color: scheme.primary,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminUsersPage(),
                                   ),
-                                  const SizedBox(height: 12),
-                                  _MiniStatCard(
-                                    icon: Icons.circle,
-                                    value: _activeNow.toString(),
-                                    label: 'Currently Active',
-                                    color: const Color(0xFF22C55E),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _QuickActionCard(
+                                icon: Icons.analytics_outlined,
+                                label: 'Reports',
+                                color: scheme.secondary,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminReportsPage(),
                                   ),
-                                  const SizedBox(height: 12),
-                                  _MiniStatCard(
-                                    icon: Icons.schedule_rounded,
-                                    value: '${_totalHoursToday ~/ 60}h',
-                                    label: 'Total Hours Today',
-                                    color: scheme.secondary,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: _QuickActionCard(
+                                icon: Icons.settings_outlined,
+                                label: 'Settings',
+                                color: const Color(0xFF8B5CF6),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminSettingsPage(),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ],
                         ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-              // Quick Actions Grid
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Quick Actions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF475569),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _QuickActionCard(
-                              icon: Icons.people_outline_rounded,
-                              label: 'Users',
-                              color: scheme.primary,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AdminUsersPage(),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _QuickActionCard(
-                              icon: Icons.analytics_outlined,
-                              label: 'Reports',
-                              color: scheme.secondary,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AdminReportsPage(),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: _QuickActionCard(
-                              icon: Icons.settings_outlined,
-                              label: 'Settings',
-                              color: const Color(0xFF8B5CF6),
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AdminSettingsPage(),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Face Test Removed
-                        ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+              if (!isWide)
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
               // Live Activity Header
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: EdgeInsets.symmetric(horizontal: isWide ? 0 : 20),
                   child: Row(
                     children: [
                       Container(
@@ -398,7 +435,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
               // Live Activity List
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: EdgeInsets.symmetric(horizontal: isWide ? 0 : 20),
                 sliver: _liveActivity.isEmpty
                     ? SliverToBoxAdapter(
                         child: Container(
@@ -424,12 +461,32 @@ class _AdminHomePageState extends State<AdminHomePage> {
                           ),
                         ),
                       )
-                    : SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final record = _liveActivity[index];
-                          return _ActivityCard(record: record);
-                        }, childCount: _liveActivity.length),
-                      ),
+                    : isWide
+                        // WEB: Wrap activity cards in a grid
+                        ? SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 400,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 2.5,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final record = _liveActivity[index];
+                                return _ActivityCard(record: record);
+                              },
+                              childCount: _liveActivity.length,
+                            ),
+                          )
+                        // MOBILE: List
+                        : SliverList(
+                            delegate:
+                                SliverChildBuilderDelegate((context, index) {
+                              final record = _liveActivity[index];
+                              return _ActivityCard(record: record);
+                            }, childCount: _liveActivity.length),
+                          ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
@@ -439,6 +496,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
     );
   }
 }
+// ... keep existing helper widgets below ...
 
 // Icon Button
 class _IconBtn extends StatelessWidget {
@@ -783,12 +841,10 @@ class _ActivityCard extends StatelessWidget {
                       checkOut != null ? timeFormat.format(checkOut) : 'Now',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isActive
-                            ? scheme.secondary
-                            : Colors.grey.shade600,
-                        fontWeight: isActive
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+                        color:
+                            isActive ? scheme.secondary : Colors.grey.shade600,
+                        fontWeight:
+                            isActive ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
                   ],

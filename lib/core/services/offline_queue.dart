@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:sqflite/sqflite.dart';
+import 'sqflite_imports.dart';
 import 'package:path/path.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

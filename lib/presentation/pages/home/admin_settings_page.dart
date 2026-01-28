@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../widgets/admin_web_scaffold.dart';
 import '../../../core/services/location_service.dart';
 
 class AdminSettingsPage extends StatefulWidget {
@@ -65,10 +66,10 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
           final wifiString = settings['wifi_allowlist']?.toString() ?? '';
           _wifiList = wifiString.isNotEmpty
               ? wifiString
-                    .split(',')
-                    .map((e) => e.trim())
-                    .where((e) => e.isNotEmpty)
-                    .toList()
+                  .split(',')
+                  .map((e) => e.trim())
+                  .where((e) => e.isNotEmpty)
+                  .toList()
               : [];
 
           // Parse working hours if needed, keeping simple for now
@@ -170,28 +171,25 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Text(
-          'System Configuration',
-          style: TextStyle(
-            color: Color(0xFF1E293B),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
+    return AdminWebScaffold(
+      title: 'System Configuration',
+      currentRoute: 'settings',
+      actions: [
+        IconButton(
+          onPressed: _isSaving ? null : _saveSettings,
+          icon: _isSaving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.indigo,
+                  ),
+                )
+              : const Icon(Icons.save_rounded, color: Colors.indigo),
+          tooltip: 'Save Settings',
         ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          color: const Color(0xFF1E293B),
-          iconSize: 20,
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isSaving ? null : _saveSettings,
         backgroundColor: scheme.primary,
@@ -266,7 +264,6 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 32),
                   _SectionHeader(
                     title: 'Geofence Radius',
@@ -330,7 +327,6 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 32),
                   _SectionHeader(
                     title: 'WiFi Security',
@@ -415,7 +411,6 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 32),
                   _SectionHeader(
                     title: 'QR Code Security',

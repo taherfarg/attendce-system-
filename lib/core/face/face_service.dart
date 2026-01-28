@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'face_imports.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:math';
 
@@ -113,8 +113,7 @@ class FaceService {
     // Check if face is centered - more relaxed thresholds
     // X: anywhere between 15% and 85% of width (very generous)
     // Y: anywhere between 10% and 90% of height (very generous)
-    final isCentered =
-        (faceCenterX > 0.15 && faceCenterX < 0.85) &&
+    final isCentered = (faceCenterX > 0.15 && faceCenterX < 0.85) &&
         (faceCenterY > 0.1 && faceCenterY < 0.9);
 
     // Check face size (should be 10-80% of image) - more relaxed

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import '../../../core/face/face_imports.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../core/face/face_service.dart';
@@ -487,17 +487,11 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                               child: FittedBox(
                                 fit: BoxFit.cover,
                                 child: SizedBox(
-                                  width:
-                                      _cameraController!
-                                          .value
-                                          .previewSize
-                                          ?.height ??
+                                  width: _cameraController!
+                                          .value.previewSize?.height ??
                                       300,
-                                  height:
-                                      _cameraController!
-                                          .value
-                                          .previewSize
-                                          ?.width ??
+                                  height: _cameraController!
+                                          .value.previewSize?.width ??
                                       400,
                                   child: CameraPreview(_cameraController!),
                                 ),
@@ -658,13 +652,13 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                                                   ],
                                                 )
                                               : isCurrent
-                                              ? const LinearGradient(
-                                                  colors: [
-                                                    Color(0xFF6366F1),
-                                                    Color(0xFF8B5CF6),
-                                                  ],
-                                                )
-                                              : null,
+                                                  ? const LinearGradient(
+                                                      colors: [
+                                                        Color(0xFF6366F1),
+                                                        Color(0xFF8B5CF6),
+                                                      ],
+                                                    )
+                                                  : null,
                                           color: !isComplete && !isCurrent
                                               ? Colors.grey.shade200
                                               : null,
@@ -692,9 +686,10 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                                                   index == 0
                                                       ? Icons.person_rounded
                                                       : index == 1
-                                                      ? Icons.arrow_back_rounded
-                                                      : Icons
-                                                            .arrow_forward_rounded,
+                                                          ? Icons
+                                                              .arrow_back_rounded
+                                                          : Icons
+                                                              .arrow_forward_rounded,
                                                   color: isCurrent
                                                       ? Colors.white
                                                       : Colors.grey.shade400,
@@ -710,8 +705,7 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                                             horizontal: 4,
                                           ),
                                           decoration: BoxDecoration(
-                                            color:
-                                                index <
+                                            color: index <
                                                     _collectedEmbeddings.length
                                                 ? const Color(0xFF10B981)
                                                 : Colors.grey.shade200,
@@ -980,9 +974,8 @@ class _StepIndicator extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             color: color,
-            fontWeight: isActive || isComplete
-                ? FontWeight.w600
-                : FontWeight.normal,
+            fontWeight:
+                isActive || isComplete ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ],
