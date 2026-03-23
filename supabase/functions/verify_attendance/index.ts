@@ -411,7 +411,22 @@ serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
 
     } else {
-        // CHECK-IN: Create a new attendance record
+        // CHECK-IN: Verify no active check-in exists
+        const { data: activeCheckin, error: activeError } = await supabaseClient
+            .from('attendance')
+            .select('id')
+            .eq('user_id', user_id)
+            .is('check_out_time', null)
+            .order('check_in_time', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            
+        if (activeCheckin) {
+             log('WARN', 'User is already checked in', { user_id })
+             return new Response(JSON.stringify({ success: false, error: 'ALREADY_CHECKED_IN', message: 'You are already checked in. Please check out first.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
+        }
+
+        // Create a new attendance record
         const { data: insertData, error: insertError } = await supabaseClient
             .from('attendance')
             .insert({

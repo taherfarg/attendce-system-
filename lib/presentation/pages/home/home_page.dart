@@ -11,6 +11,7 @@ import '../../../data/models/attendance_model.dart';
 import '../../../core/utils/time_utils.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/wifi_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Tabs
 import 'tabs/dashboard_tab.dart';
@@ -174,6 +175,49 @@ class _HomePageState extends State<HomePage> {
   // --- Check In/Out Logic ---
 
   Future<void> _validateAndProceed(bool isCheckIn) async {
+    // Prevent check-out if not checked in
+    if (!isCheckIn) {
+      if (_todayRecord == null || !_todayRecord!.isCheckedIn) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must check in before checking out.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Early Out Check (Less than 8 hours)
+      if (_elapsedTime.inMinutes < 480) {
+        bool confirmEarlyOut = false;
+        if (mounted) {
+          confirmEarlyOut = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Leaving Early?'),
+              content: const Text('You have not completed your 8-hour shift. Are you sure you want to check out now?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Yes, Check Out', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          ) ?? false;
+        }
+
+        if (!confirmEarlyOut) {
+          return;
+        }
+      }
+    }
+
     // Show validation loader
     showDialog(
       context: context,
@@ -285,28 +329,30 @@ class _HomePageState extends State<HomePage> {
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.face_rounded, color: Colors.blue),
-              ),
-              title: const Text('Face Verification'),
-              subtitle: const Text('Secure biometric verification'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FaceScanPage(isCheckIn: isCheckIn),
+            if (!kIsWeb) ...[
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ).then((_) => _loadData());
-              },
-            ),
-            const SizedBox(height: 12),
+                  child: const Icon(Icons.face_rounded, color: Colors.blue),
+                ),
+                title: const Text('Face Verification'),
+                subtitle: const Text('Secure biometric verification'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => FaceScanPage(isCheckIn: isCheckIn),
+                    ),
+                  ).then((_) => _loadData());
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(10),

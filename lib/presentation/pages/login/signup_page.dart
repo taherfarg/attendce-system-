@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../profile/enrollment_page.dart';
+import '../home/home_page.dart';
 
 /// Modern signup page with user registration and face enrollment
 class SignupPage extends StatefulWidget {
@@ -75,11 +77,19 @@ class _SignupPageState extends State<SignupPage> {
       }
 
       if (mounted) {
-        // Navigate to face enrollment
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const EnrollmentPage()),
-        );
+        // Navigate to face enrollment or home based on platform
+        if (kIsWeb) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => false,
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const EnrollmentPage()),
+          );
+        }
       }
     } on AuthException catch (e) {
       setState(() => _errorMessage = e.message);

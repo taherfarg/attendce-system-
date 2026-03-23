@@ -1,5 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:io';
 
 class AppErrorHandler {
   static String parse(dynamic error) {
@@ -7,7 +6,7 @@ class AppErrorHandler {
       return _parseAuthError(error);
     } else if (error is PostgrestException) {
       return _parsePostgrestError(error);
-    } else if (error is SocketException) {
+    } else if (error.runtimeType.toString() == 'SocketException' || error.toString().contains('SocketException')) {
       return 'No internet connection. Please check your network.';
     } else if (error is FormatException) {
       return 'Data format error. Please try again.';

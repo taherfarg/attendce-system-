@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'presentation/pages/login/login_page.dart';
 import 'presentation/pages/home/home_page.dart';
 import 'presentation/pages/home/admin_home_page.dart';
@@ -301,12 +302,12 @@ class _RoleRouterState extends State<RoleRouter> {
       return const AdminHomePage();
     }
 
-    // Employee without face enrollment - go to enrollment
-    if (!_hasEnrolledFace) {
+    // Employee without face enrollment - go to enrollment (UNLESS on Web)
+    if (!_hasEnrolledFace && !kIsWeb) {
       return const EnrollmentPage();
     }
 
-    // Employee with face enrollment - go to home
+    // Employee with face enrollment (or Web user without enrolled face) - go to home
     return const HomePage();
   }
 }
