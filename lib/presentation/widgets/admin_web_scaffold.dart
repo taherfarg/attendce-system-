@@ -97,7 +97,7 @@ class AdminWebScaffold extends StatelessWidget {
                                 Icon(Icons.logout, color: Colors.red, size: 20),
                                 SizedBox(width: 8),
                                 Text('Sign Out',
-                                    style: TextStyle(color: Colors.red)),
+                                    style: TextStyle(color: Colors.red),),
                               ],
                             ),
                             onTap: () async {
@@ -151,7 +151,7 @@ class _AdminSidebar extends StatelessWidget {
             child: const Row(
               children: [
                 Icon(Icons.electric_bolt_rounded,
-                    color: Color(0xFF6366F1), size: 28),
+                    color: Color(0xFF6366F1), size: 28,),
                 SizedBox(width: 12),
                 Text(
                   'AdminPanel',

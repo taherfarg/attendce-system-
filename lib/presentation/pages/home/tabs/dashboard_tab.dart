@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../data/models/attendance_model.dart';
 import '../../../../core/utils/time_utils.dart';
-import 'dart:ui';
 
 class DashboardTab extends StatelessWidget {
   final String userName;

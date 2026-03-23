@@ -333,7 +333,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                                   .animate()
                                   .fade(delay: (50 * index).ms)
                                   .slideX(begin: 0.05);
-                            }, childCount: _reportMaps.length),
+                            }, childCount: _reportMaps.length,),
                           ),
 
                         const SliverToBoxAdapter(child: SizedBox(height: 40)),

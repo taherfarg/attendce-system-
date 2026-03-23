@@ -153,7 +153,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: DropdownButtonFormField<String?>(
-                              value: _selectedUserId,
+                              initialValue: _selectedUserId,
                               decoration: const InputDecoration(
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: 12,

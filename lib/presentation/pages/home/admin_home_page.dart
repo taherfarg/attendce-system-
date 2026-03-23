@@ -29,7 +29,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
   bool _isLoading = true;
   String? _errorMessage;
 
-  DateTime _selectedDate = DateTime.now();
+  final DateTime _selectedDate = DateTime.now();
   final _dateFormat = DateFormat('EEE, MMM d');
 
   @override
@@ -485,7 +485,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                 SliverChildBuilderDelegate((context, index) {
                               final record = _liveActivity[index];
                               return _ActivityCard(record: record);
-                            }, childCount: _liveActivity.length),
+                            }, childCount: _liveActivity.length,),
                           ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -508,8 +508,6 @@ class _IconBtn extends StatelessWidget {
   const _IconBtn({
     required this.icon,
     required this.onTap,
-    this.isError = false,
-    this.isLogout = false,
   });
 
   @override

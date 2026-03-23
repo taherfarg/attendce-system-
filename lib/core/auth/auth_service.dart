@@ -124,7 +124,7 @@ class AuthService {
 
     try {
       // Fetch user role
-      var userResponse = await _client
+      final userResponse = await _client
           .from('users')
           .select('role')
           .eq('id', user.id)

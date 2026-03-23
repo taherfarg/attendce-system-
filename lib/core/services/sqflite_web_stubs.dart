@@ -2,7 +2,7 @@
 class Database {
   Future<void> execute(String sql, [List<Object?>? arguments]) async {}
   Future<int> insert(String table, Map<String, Object?> values,
-      {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) async {
+      {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm,}) async {
     return 0;
   }
 
@@ -15,17 +15,17 @@ class Database {
       String? having,
       String? orderBy,
       int? limit,
-      int? offset}) async {
+      int? offset,}) async {
     return [];
   }
 
   Future<List<Map<String, Object?>>> rawQuery(String sql,
-      [List<Object?>? arguments]) async {
+      [List<Object?>? arguments,]) async {
     return [];
   }
 
   Future<int> delete(String table,
-      {String? where, List<Object?>? whereArgs}) async {
+      {String? where, List<Object?>? whereArgs,}) async {
     return 0;
   }
 

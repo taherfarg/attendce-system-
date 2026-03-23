@@ -232,7 +232,7 @@ class _AdminUserHistoryPageState extends State<AdminUserHistoryPage> {
                                 .animate()
                                 .fade(delay: (50 * index).ms)
                                 .slideX(begin: 0.05);
-                          }, childCount: _history.length),
+                          }, childCount: _history.length,),
                         ),
                       ),
                   ],

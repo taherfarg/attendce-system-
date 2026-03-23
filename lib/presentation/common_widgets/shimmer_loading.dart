@@ -51,7 +51,7 @@ class ShimmerList extends StatelessWidget {
                     ).animate(onPlay: (c) => c.repeat()).shimmer(
                         duration: 1200.ms,
                         delay: 200.ms,
-                        color: Colors.grey.shade50),
+                        color: Colors.grey.shade50,),
                     const SizedBox(height: 8),
                     Container(
                       width: 80,
@@ -63,7 +63,7 @@ class ShimmerList extends StatelessWidget {
                     ).animate(onPlay: (c) => c.repeat()).shimmer(
                         duration: 1200.ms,
                         delay: 400.ms,
-                        color: Colors.grey.shade50),
+                        color: Colors.grey.shade50,),
                   ],
                 ),
               ),

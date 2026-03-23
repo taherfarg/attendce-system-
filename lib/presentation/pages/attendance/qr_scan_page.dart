@@ -61,10 +61,12 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_permissionGranted)
+    if (!_permissionGranted) {
       return; // Only manage lifecycle if permission was granted
-    if (!_controller.value.isInitialized)
+    }
+    if (!_controller.value.isInitialized) {
       return; // Ensure controller is initialized
+    }
     switch (state) {
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
@@ -181,17 +183,17 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
       body: _isLoadingPermission
           ? const Center(child: CircularProgressIndicator())
           : !_permissionGranted
-          ? Center(
+          ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.videocam_off, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text('Camera permission is required'),
-                  const SizedBox(height: 16),
+                  Icon(Icons.videocam_off, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text('Camera permission is required'),
+                  SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: openAppSettings,
-                    child: const Text('Open Settings'),
+                    child: Text('Open Settings'),
                   ),
                 ],
               ),
@@ -209,7 +211,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
                       border: Border.all(color: Colors.white, width: 2),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Stack(
+                    child: const Stack(
                       children: [
                         // Corners
                         Positioned(

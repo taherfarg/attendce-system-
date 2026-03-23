@@ -40,7 +40,7 @@ class _EnrollmentPageState extends State<EnrollmentPage>
   static const _requiredPoses = 3;
   final List<String> _poseLabels = ['Center', 'Turn Left', 'Turn Right'];
   int _currentPoseIndex = 0;
-  List<List<double>> _collectedEmbeddings = [];
+  final List<List<double>> _collectedEmbeddings = [];
   bool _poseReady = false; // Current pose is ready to capture
 
   late AnimationController _pulseController;
@@ -619,7 +619,7 @@ class _EnrollmentPageState extends State<EnrollmentPage>
                           child: Column(
                             children: [
                               Text(
-                                'Capture ${_requiredPoses} Poses',
+                                'Capture $_requiredPoses Poses',
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,

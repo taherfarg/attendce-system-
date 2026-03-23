@@ -281,14 +281,14 @@ class _FaceTestPageState extends State<FaceTestPage> {
                 color: const Color(0xFFE0E7FF),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
+              child: const Row(
                 children: [
-                  const Icon(Icons.folder, color: Color(0xFF6366F1)),
-                  const SizedBox(width: 8),
+                  Icon(Icons.folder, color: Color(0xFF6366F1)),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       localPhotoPath,
-                      style: const TextStyle(fontSize: 12),
+                      style: TextStyle(fontSize: 12),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

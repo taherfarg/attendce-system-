@@ -1,8 +1,6 @@
-import 'dart:typed_data';
 import 'dart:ui' show Size;
 import 'package:camera/camera.dart';
 import 'face_imports.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:math';
 
 /// Service for face detection, liveness check, and embedding extraction

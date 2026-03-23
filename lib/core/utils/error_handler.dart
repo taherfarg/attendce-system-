@@ -14,7 +14,7 @@ class AppErrorHandler {
     }
 
     // Clean up generic exception strings
-    String msg = error.toString().replaceAll('Exception: ', '');
+    final String msg = error.toString().replaceAll('Exception: ', '');
     // Remove "functions-dart" prefix if present
     if (msg.contains('functions-dart')) {
       return 'Server error. Please try again later.';

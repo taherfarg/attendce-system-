@@ -27,8 +27,8 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
   // State
   double _radius = 100;
   List<String> _wifiList = [];
-  TimeOfDay _workStart = const TimeOfDay(hour: 9, minute: 0);
-  TimeOfDay _workEnd = const TimeOfDay(hour: 18, minute: 0);
+  final TimeOfDay _workStart = const TimeOfDay(hour: 9, minute: 0);
+  final TimeOfDay _workEnd = const TimeOfDay(hour: 18, minute: 0);
 
   @override
   void initState() {
@@ -126,7 +126,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
     setState(() => _isLoading = true);
     try {
       final position = await _locationService.getCurrentPosition();
-      if (position != null && mounted) {
+      if (mounted) {
         setState(() {
           _latController.text = position.latitude.toString();
           _lngController.text = position.longitude.toString();
@@ -213,7 +213,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _SectionHeader(
+                  const _SectionHeader(
                     title: 'Office Location',
                     icon: Icons.location_on_outlined,
                   ),
@@ -265,7 +265,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  _SectionHeader(
+                  const _SectionHeader(
                     title: 'Geofence Radius',
                     icon: Icons.radar_rounded,
                   ),
@@ -328,7 +328,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  _SectionHeader(
+                  const _SectionHeader(
                     title: 'WiFi Security',
                     icon: Icons.wifi_lock_rounded,
                   ),
@@ -412,7 +412,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  _SectionHeader(
+                  const _SectionHeader(
                     title: 'QR Code Security',
                     icon: Icons.qr_code_2_rounded,
                   ),

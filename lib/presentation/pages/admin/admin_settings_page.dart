@@ -46,11 +46,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
           .from('system_settings')
           .select('setting_key, setting_value');
 
-      final settings = Map.fromIterable(
-        response as List,
-        key: (s) => s['setting_key'],
-        value: (s) => s['setting_value'],
-      );
+      final settings = { for (var s in response as List) s['setting_key'] : s['setting_value'] };
 
       // Parse office location
       if (settings['office_location'] != null) {
@@ -97,7 +93,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
       'setting_value': value,
       'description': description,
       'updated_at': DateTime.now().toIso8601String(),
-    }, onConflict: 'setting_key');
+    }, onConflict: 'setting_key',);
   }
 
   Future<void> _saveAllSettings() async {
@@ -123,7 +119,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
       await _saveSetting('office_location', {
         'lat': lat,
         'lng': lng,
-      }, description: 'Office GPS coordinates');
+      }, description: 'Office GPS coordinates',);
 
       await _saveSetting(
         'allowed_radius_meters',
@@ -212,7 +208,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Office Location Section
-                  _SectionHeader(
+                  const _SectionHeader(
                     icon: Icons.location_on,
                     title: 'Office Location',
                     subtitle: 'GPS coordinates of the office',
@@ -272,7 +268,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                   const SizedBox(height: 24),
 
                   // Allowed Radius Section
-                  _SectionHeader(
+                  const _SectionHeader(
                     icon: Icons.radar,
                     title: 'Allowed Radius',
                     subtitle: 'Maximum distance from office for check-in',
@@ -321,7 +317,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
                   const SizedBox(height: 24),
 
                   // WiFi Allowlist Section
-                  _SectionHeader(
+                  const _SectionHeader(
                     icon: Icons.wifi,
                     title: 'Authorized WiFi Networks',
                     subtitle: 'Employees must be connected to one of these',

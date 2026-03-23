@@ -156,7 +156,7 @@ class _HistoryCard extends StatelessWidget {
                   ),
                   if (item.totalMinutes > 0)
                     Text(
-                      '${item.formattedDuration}',
+                      item.formattedDuration,
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade500,

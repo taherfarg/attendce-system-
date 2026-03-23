@@ -44,7 +44,7 @@ class _FaceScanPageState extends State<FaceScanPage>
   List<double>? _currentEmbedding;
 
   // Collect multiple embeddings for averaging (more stable verification)
-  List<List<double>> _collectedEmbeddings = [];
+  final List<List<double>> _collectedEmbeddings = [];
   static const _requiredEmbeddingCount = 3;
 
   // Throttle frame processing to prevent lag

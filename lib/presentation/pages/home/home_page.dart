@@ -102,8 +102,8 @@ class _HomePageState extends State<HomePage> {
       );
 
       int weeklyMinutes = 0;
-      Set<int> presentDays = {};
-      List<bool> weekDays = List.filled(7, false);
+      final Set<int> presentDays = {};
+      final List<bool> weekDays = List.filled(7, false);
 
       for (var record in data) {
         final checkIn = TimeUtils.toDubai(record.checkInTime);

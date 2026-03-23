@@ -9,7 +9,7 @@ class FaceTestPage extends StatelessWidget {
       appBar: AppBar(title: const Text('Face Embedding Test')),
       body: const Center(
         child: Text(
-            'This feature relies on local file access and is not supported on web.'),
+            'This feature relies on local file access and is not supported on web.',),
       ),
     );
   }

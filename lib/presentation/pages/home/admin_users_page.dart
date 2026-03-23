@@ -50,7 +50,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
             // TODO: Add new user
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('Add User functionality coming soon')),
+                  content: Text('Add User functionality coming soon'),),
             );
           },
         ),
@@ -125,7 +125,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                         decoration: BoxDecoration(
                           color: isActive
                               ? scheme.secondary.withOpacity(0.1)
-                              : scheme.surfaceVariant,
+                              : scheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: isActive
