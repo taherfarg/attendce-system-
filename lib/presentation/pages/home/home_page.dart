@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/auth/auth_service.dart';
 import '../../../core/services/offline_queue.dart';
@@ -12,7 +11,6 @@ import '../../../data/models/attendance_model.dart';
 import '../../../core/utils/time_utils.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/wifi_service.dart';
-import 'package:geolocator/geolocator.dart';
 
 // Tabs
 import 'tabs/dashboard_tab.dart';

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import '../../widgets/admin_web_scaffold.dart';
 import '../../../core/services/location_service.dart';
 

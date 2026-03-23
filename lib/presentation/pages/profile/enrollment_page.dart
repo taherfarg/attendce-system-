@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../core/face/face_service.dart';
 import '../../../core/permissions/permission_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Modern face enrollment page with step indicators and animations
 class EnrollmentPage extends StatefulWidget {
@@ -114,6 +115,16 @@ class _EnrollmentPageState extends State<EnrollmentPage>
       await Future.delayed(const Duration(milliseconds: 100));
 
       if (!mounted) return;
+
+      if (kIsWeb) {
+        if (mounted) {
+          setState(() {
+            _isInitializing = false;
+            _statusMessage = 'Mobile app required for Face ID';
+          });
+        }
+        return; // Web doesn't support startImageStream and ML Kit
+      }
 
       await _cameraController!.startImageStream(_processImage);
 
@@ -343,7 +354,9 @@ class _EnrollmentPageState extends State<EnrollmentPage>
             behavior: SnackBarBehavior.floating,
           ),
         );
-        await _cameraController?.startImageStream(_processImage);
+        if (!kIsWeb) {
+          await _cameraController?.startImageStream(_processImage);
+        }
       }
     }
   }

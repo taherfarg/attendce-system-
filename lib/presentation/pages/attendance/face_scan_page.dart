@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:camera/camera.dart';
 import '../../../core/face/face_imports.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +10,7 @@ import '../../../core/wifi/wifi_service.dart';
 import '../../../core/services/offline_queue.dart';
 import '../../../core/permissions/permission_service.dart';
 import '../../../data/repositories/attendance_repository.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Modern face scan page with properly centered camera
 class FaceScanPage extends StatefulWidget {
@@ -103,6 +103,18 @@ class _FaceScanPageState extends State<FaceScanPage>
       );
 
       await _cameraController!.initialize();
+
+      if (kIsWeb) {
+        if (mounted) {
+          setState(() {
+            _isInitializing = false;
+            _statusMessage = 'Mobile app required for Face ID';
+            _instruction = 'Please use the mobile app to scan your face';
+          });
+        }
+        return;
+      }
+
       await _cameraController!.startImageStream(_processImage);
 
       if (mounted) {
@@ -347,7 +359,9 @@ class _FaceScanPageState extends State<FaceScanPage>
       _showSuccessAndReturn();
     } catch (e) {
       _showError(e.toString());
-      await _cameraController?.startImageStream(_processImage);
+      if (!kIsWeb) {
+        await _cameraController?.startImageStream(_processImage);
+      }
     }
   }
 

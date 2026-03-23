@@ -7,7 +7,6 @@ import 'admin_users_page.dart';
 import 'admin_reports_page.dart';
 import 'admin_settings_page.dart';
 import 'admin_notifications_page.dart';
-import '../profile/face_test_page.dart';
 import '../../../core/utils/time_utils.dart';
 
 /// Modern admin dashboard with attendance rate and improved layout
@@ -506,8 +505,11 @@ class _IconBtn extends StatelessWidget {
   final bool isLogout;
 
   const _IconBtn({
+    super.key,
     required this.icon,
     required this.onTap,
+    this.isError = false,
+    this.isLogout = false,
   });
 
   @override
