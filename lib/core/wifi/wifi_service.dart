@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../permissions/permission_service.dart';
@@ -10,13 +10,15 @@ class WifiService {
 
   /// Check and request necessary permissions for WiFi info
   Future<bool> checkAndRequestPermission() async {
-    if (Platform.isAndroid) {
+    if (kIsWeb) return true; // Web handles permissions natively or doesn't support them
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
       // Android requires location permission to access WiFi SSID
       final status = await _permissionService.requestPermission(
         Permission.location,
       );
       return status.isGranted;
-    } else if (Platform.isIOS) {
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       // iOS requires location permission for WiFi info
       final status = await _permissionService.requestPermission(
         Permission.locationWhenInUse,

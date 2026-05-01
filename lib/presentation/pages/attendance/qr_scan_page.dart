@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -36,6 +37,17 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   }
 
   Future<void> _checkPermission() async {
+    if (kIsWeb) {
+      if (mounted) {
+        setState(() {
+          _permissionGranted = true;
+          _isLoadingPermission = false;
+        });
+        _initializeScanner();
+      }
+      return;
+    }
+
     final status = await Permission.camera.request();
     if (mounted) {
       setState(() {
