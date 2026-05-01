@@ -180,9 +180,11 @@ class _HomePageState extends State<HomePage> {
       if (_todayRecord == null || !_todayRecord!.isCheckedIn) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('You must check in before checking out.'),
-              backgroundColor: Colors.orange,
+            SnackBar(
+              content: const Text('You must check in before checking out.'),
+              backgroundColor: Colors.orange.shade600,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           );
         }
@@ -196,6 +198,7 @@ class _HomePageState extends State<HomePage> {
           confirmEarlyOut = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: const Text('Leaving Early?'),
               content: const Text('You have not completed your 8-hour shift. Are you sure you want to check out now?'),
               actions: [
@@ -218,15 +221,25 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // Show validation loader
+    // On Web: skip WiFi and location validation checks since they are unreliable.
+    // The QR scanner itself handles sending location/wifi data with graceful fallbacks.
+    if (kIsWeb) {
+      if (mounted) {
+        _showVerificationSheet(isCheckIn);
+      }
+      return;
+    }
+
+    // Show validation loader (mobile only)
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Dialog(
+      builder: (context) => Dialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        child: Padding(
-          padding: EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Padding(
+          padding: EdgeInsets.all(24),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -297,6 +310,7 @@ class _HomePageState extends State<HomePage> {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('Validation Failed'),
             content: Text(e.toString().replaceAll('Exception: ', '')),
             actions: [
